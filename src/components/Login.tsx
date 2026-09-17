@@ -10,6 +10,7 @@ import {
 import type { SessionInfo } from "../../shared/types";
 import { api, setCsrf } from "../api";
 import { Brand } from "./Brand";
+import { GoogleConnectionError } from "./GoogleConnectionError";
 export function Login({
   session,
   onLogin,
@@ -22,11 +23,11 @@ export function Login({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<Error | null>(null);
   const [showLogin, setShowLogin] = useState(!session.demoAvailable);
   async function login(demo = false) {
     setBusy(true);
-    setError("");
+    setError(null);
     try {
       await api(
         demo
@@ -40,7 +41,7 @@ export function Login({
       setCsrf(info.csrfToken);
       onLogin(info);
     } catch (e) {
-      setError((e as Error).message);
+      setError(e instanceof Error ? e : new Error("Koneksi belum berhasil. Silakan coba lagi."));
     } finally {
       setBusy(false);
     }
@@ -102,11 +103,7 @@ export function Login({
               ? "Masuk ke ruang kerja pribadi Anda."
               : "Masuk ke ruang kerja sekretariat Anda."}
           </p>
-          {error && (
-            <div className="alert error" role="alert">
-              {error}
-            </div>
-          )}
+          {error && <GoogleConnectionError error={error} />}
           {local ? (
             <div className="demo-invitation">
               <span className="badge neutral">RUANG PRIBADI ANDA</span>

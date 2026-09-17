@@ -2,6 +2,8 @@
 
 ## Perbaikan koneksi Google pada browser
 
+- API Calendar yang belum aktif kini dibedakan dari penolakan izin kalender berdasarkan `accessNotConfigured` / `SERVICE_DISABLED`. Halaman login memberi petunjuk dan tautan aktivasi resmi; payload, token, dan URL dari respons Google tidak ditampilkan.
+- Fixture lokal `tests/browser-google-errors.html` menguji alur login lengkap dengan respons 403 sintetis; halaman menampilkan penyebab API belum aktif, tombol pengaturan, serta diagnosis HTTP 403.
 - Kegagalan pengguna direproduksi di Chromium: `fetch` bawaan yang disimpan sebagai metode objek melempar `Illegal invocation` sebelum mengirim request. Pesan aplikasi sama dengan laporan pengguna.
 - Pemanggilan bawaan sekarang terikat ke `globalThis`. Laporan penutupan popup setelah token diterima juga tidak lagi membatalkan pembacaan kalender yang sedang berjalan.
 - Dua tes regresi gagal sebelum perbaikan dan lulus sesudahnya. Fixture `tests/browser-google.html` memakai native fetch dengan data lokal sintetis: sebelum perbaikan 0 request dan koneksi gagal; sesudah perbaikan 3 request, sesi terhubung, daftar kalender dan kegiatan berhasil dibaca.
@@ -13,7 +15,7 @@ Lingkungan: Windows, Node.js 25.5.0, npm 11.8.0. API lokal Express, SQLite lokal
 ## Hasil yang dijalankan
 
 - `npm run build`: kompilasi TypeScript dan build Vite berhasil.
-- `npm test`: **70 lulus, 0 gagal** — 16 tes domain, 7 tes integrasi API server, 2 tes clipboard, 7 tes konfigurasi pribadi, 17 tes gateway Google browser, 16 tes runtime browser, dan 5 tes IndexedDB.
+- `npm test`: **80 lulus, 0 gagal** — 16 tes domain, 7 tes integrasi API server, 2 tes clipboard, 7 tes konfigurasi pribadi, 18 tes gateway Google browser, 9 tes klasifikasi error Google, 16 tes runtime browser, dan 5 tes IndexedDB.
 - `npm install` terakhir: audit dependensi melaporkan 0 kerentanan.
 - Browser: masuk demo, memilih profil secara eksplisit, memuat lima kegiatan, dan memblokir pilihan kegiatan privat.
 - Browser: satu kegiatan lengkap dapat dibuat, peringatan pilihan sebagian harus diakui, konfirmasi isi mengaktifkan tombol Salin Pesan, dan promise clipboard berhasil menampilkan notifikasi yang benar.

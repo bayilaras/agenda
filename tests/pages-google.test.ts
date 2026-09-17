@@ -486,6 +486,26 @@ test("revoked tokens clear connection; access denial and quota failures stay dis
   }
 });
 
+test("disabled Calendar API during login is reported as project setup, not a selected-calendar permission", async () => {
+  const network = fetchMock(() => Response.json({ error: {
+    errors: [{ reason: "accessNotConfigured" }],
+    details: [{ reason: "SERVICE_DISABLED" }],
+    message: "Private provider diagnostic must not reach the interface",
+  } }, { status: 403 }));
+  const google = new BrowserGoogle("client", { ...oauthMock(), ...network });
+  await assert.rejects(google.connect(), (error: unknown) => {
+    assert.ok(error instanceof ApiError);
+    assert.equal(error.data.code, "GOOGLE_API_DISABLED");
+    assert.equal(error.data.httpStatus, 403);
+    assert.equal(error.status, 503);
+    assert.match(error.message, /Google Calendar API/);
+    assert.doesNotMatch(error.message, /kalender yang dipilih|Private provider/);
+    return true;
+  });
+  assert.equal(google.isConnected(), false);
+  assert.equal(google.getUser(), null);
+});
+
 test("network timeout rejects the read instead of showing a partial calendar", async () => {
   const network = fetchMock((url, init) =>
     url.pathname.endsWith("/events")

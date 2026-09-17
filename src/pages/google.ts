@@ -6,6 +6,7 @@ import {
 } from "../../shared/domain";
 import type { AgendaEvent, User } from "../../shared/types";
 import { ApiError } from "../api-error";
+import { calendarApiError } from "./google-errors";
 import type {
   BrowserGoogleSession,
   BrowserLeader,
@@ -581,26 +582,14 @@ export class BrowserGoogle implements CalendarGateway {
       throw reconnectError();
     }
     if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as {
-        error?: { errors?: { reason?: string }[] };
-      };
-      const quota = body.error?.errors?.some((entry) =>
-        [
-          "rateLimitExceeded",
-          "userRateLimitExceeded",
-          "quotaExceeded",
-        ].includes(entry.reason ?? ""),
-      );
-      if ([403, 404].includes(response.status) && !quota)
-        throw googleError(
-          "Akses kalender ditolak. Periksa izin akun Google untuk kalender yang dipilih.",
-          "GOOGLE_ACCESS_DENIED",
-          403,
-        );
-      throw googleError(
-        "Google Calendar sementara belum tersedia. Coba lagi setelah beberapa saat.",
-        "GOOGLE_UNAVAILABLE",
-      );
+      const body: unknown = await response.json().catch(() => null);
+      const pathname = new URL(url).pathname;
+      const context = pathname.endsWith("/calendarList/primary")
+        ? "primary-calendar"
+        : pathname.endsWith("/calendarList")
+          ? "calendar-list"
+          : "events";
+      throw calendarApiError(response.status, body, context);
     }
     const body: unknown = await response.json();
     if (!body || typeof body !== "object" || Array.isArray(body))

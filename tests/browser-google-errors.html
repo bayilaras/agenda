@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="id">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Uji pesan API kalender belum aktif</title>
+  <p style="padding: 12px; margin: 0">Uji lokal: respons API belum aktif disimulasikan. Tidak memakai akun Google.</p>
+  <div id="root"></div>
+  <script type="module">
+    const nativeFetch = globalThis.fetch.bind(globalThis);
+    globalThis.fetch = async function (input, init) {
+      const url = new URL(String(input), location.href);
+      if (url.origin === "https://www.googleapis.com" && url.pathname.startsWith("/calendar/v3/")) {
+        return Response.json({ error: { code: 403, errors: [{ reason: "accessNotConfigured" }],
+          details: [{ "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "SERVICE_DISABLED" }] } },
+          { status: 403 });
+      }
+      return nativeFetch(input, init);
+    };
+    globalThis.google = { accounts: { oauth2: {
+      initTokenClient(config) {
+        return { requestAccessToken() { queueMicrotask(() => config.callback({
+          access_token: "synthetic-token", expires_in: 3600, scope: config.scope,
+        })); } };
+      },
+      revoke(_token, callback) { callback({ successful: true }); },
+    } } };
+    await import("../src/main.tsx");
+  </script>
+</html>

@@ -3229,3 +3229,14 @@ pre {
     scroll-behavior: auto !important;
   }
 }
+.google-connection-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.google-connection-error p { margin: 0; }
+.google-connection-error details { font-size: 12px; }
+.google-connection-error summary { cursor: pointer; }
+.google-connection-error code { display: block; margin-top: 8px; }
