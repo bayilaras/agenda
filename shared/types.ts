@@ -1,5 +1,6 @@
 export type Attendance = "undecided" | "attending" | "represented" | "absent";
 export type Mode = "" | "online" | "offline" | "hybrid";
+export type CompositionMode = "calendar" | "custom";
 export interface Leader {
   id: string;
   name: string;
@@ -63,6 +64,7 @@ export interface AgendaEvent {
   revision: number;
   reviewedSourceVersion: string;
   conflicts: string[];
+  sourceAttachments?: { title: string; url: string }[];
   sourceCandidates?: {
     field: "meetingUrl" | "meetingId" | "passcode";
     value: string;
@@ -92,6 +94,7 @@ export interface Snapshot {
   complete: boolean;
 }
 export interface Draft extends Validation {
+  compositionMode?: CompositionMode;
   draftId: string;
   plainText: string;
   contentHash: string;

@@ -3251,3 +3251,10 @@ pre {
 }
 .description-fill p { margin: 5px 0 0; font-size: 12px; line-height: 1.6; }
 .description-fill .button { justify-self: start; }
+
+.composition-panel { display: grid; gap: 14px; padding: 20px; margin: 18px 0; border: 1px solid var(--border); border-radius: 12px; background: var(--green-soft); }
+.composition-panel p { margin: 6px 0 0; font-size: 13px; line-height: 1.7; }
+.composition-options { display: flex; flex-wrap: wrap; gap: 10px; }
+.calendar-details { padding: 20px; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.calendar-details pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.calendar-details > div { margin-top: 18px; }

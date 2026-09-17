@@ -468,6 +468,30 @@ test("conference candidates preserve raw characters and do not substitute a Goog
   assert.ok(value.conflicts.length >= 2);
 });
 
+test("source attachment links stay independent of editable supplements and private sources are redacted", async () => {
+  const input = {
+    ...source,
+    attachments: [
+      {
+        title: "Undangan uji.pdf",
+        fileUrl: "https://drive.google.com/file/d/synthetic/view",
+      },
+    ],
+  };
+  const mapped = await mapBrowserGoogleEvent(input, leader, "owner");
+  assert.deepEqual(mapped.sourceAttachments, [
+    { title: "Undangan uji.pdf", url: input.attachments[0].fileUrl },
+  ]);
+  mapped.supplement.materialLinks[0].title = "Isian manual";
+  assert.equal(mapped.sourceAttachments![0].title, "Undangan uji.pdf");
+  const privateEvent = await mapBrowserGoogleEvent(
+    { ...input, visibility: "private" },
+    leader,
+    "reader",
+  );
+  assert.equal(privateEvent.sourceAttachments, undefined);
+});
+
 test("Teams description and native Meet expose both sources without replacing inferred access", async () => {
   const teamsUrl =
     "https://teams.microsoft.com/meet/123456789?p=synthetic%2Bpass";

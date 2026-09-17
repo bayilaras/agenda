@@ -178,10 +178,11 @@ async function fixture(
       },
       "PATCH",
     );
-  const prepare = (snapshot: Snapshot) =>
+  const prepare = (snapshot: Snapshot, compositionMode?: unknown) =>
     request<Draft>("/api/messages/prepare", {
       leaderId: snapshot.leaderId,
       date: snapshot.date,
+      ...(compositionMode !== undefined ? { compositionMode } : {}),
       eventIds: [snapshot.events[0].id],
       snapshotHash: snapshot.hash,
       revisions: Object.fromEntries(
@@ -218,6 +219,97 @@ function status(expected: number, code?: string) {
     error.status === expected &&
     (!code || error.data.code === code);
 }
+
+test("Pages calendar mode composes directly from source despite incomplete or absent saved supplements", async () => {
+  const gateway = new FakeGoogle();
+  gateway.rows[0].supplement = emptySupplement();
+  const f = await fixture(new MemoryStorage(), gateway);
+  let snapshot = await f.refresh();
+  const strict = await f.prepare(snapshot);
+  assert.equal(strict.compositionMode, "custom");
+  assert.ok(strict.errors.length > 0);
+  await f.request(
+    `/api/agenda/${snapshot.events[0].id}/supplement`,
+    {
+      leaderId: LEADER.id,
+      date: DATE,
+      expectedRevision: snapshot.events[0].revision,
+      supplement: {
+        ...emptySupplement(),
+        attendance: "absent",
+        title: "Judul manual lama",
+        agenda: "Agenda manual lama",
+        notes: "Catatan manual lama",
+      },
+    },
+    "PATCH",
+  );
+  snapshot = await f.refresh();
+  const draft = await f.prepare(snapshot, "calendar");
+  assert.equal(draft.compositionMode, "calendar");
+  assert.deepEqual(draft.errors, []);
+  assert.match(draft.plainText, /Rapat Uji/);
+  assert.match(draft.plainText, /Pembahasan rencana kerja\./);
+  assert.match(draft.plainText, /Ruang Rapat/);
+  assert.doesNotMatch(draft.plainText, /manual lama/);
+  assert.equal(draft.readyToCopy, false);
+  await assert.rejects(
+    f.request(`/api/messages/${draft.draftId}/review`, {
+      contentHash: draft.contentHash,
+      confirmed: false,
+      acknowledgedWarnings: draft.warnings.map((issue) => issue.id),
+    }),
+    status(422),
+  );
+  assert.equal((await f.review(draft)).readyToCopy, true);
+  const saved = (await f.refresh()).events[0].supplement;
+  assert.equal(saved.attendance, "absent");
+  assert.equal(saved.title, "Judul manual lama");
+  assert.equal(saved.sourceReviewed, false);
+  assert.equal(saved.accessVerified, false);
+});
+
+test("Pages calendar mode keeps source freshness, expiry, and private/cancelled exclusions", async () => {
+  const f = await fixture();
+  const draft = await f.prepare(await f.refresh(), "calendar");
+  f.gateway.rows[0].sourceVersion = "v2";
+  f.gateway.rows[0].description = "Agenda diperbarui di kalender.";
+  await assert.rejects(f.review(draft), status(409, "DRAFT_CHANGED"));
+  const updated = await f.prepare(await f.refresh(), "calendar");
+  assert.match(updated.plainText, /Agenda diperbarui di kalender\./);
+  assert.deepEqual(updated.errors, []);
+  f.advance(121_000);
+  await assert.rejects(f.review(updated), status(409, "DRAFT_EXPIRED"));
+  for (const excluded of ["private", "cancelled"]) {
+    f.gateway.rows[0] = source();
+    f.gateway.rows[0].sourceVersion = excluded;
+    if (excluded === "private") f.gateway.rows[0].readable = false;
+    else f.gateway.rows[0].status = "cancelled";
+    const denied = await f.prepare(await f.refresh(), "calendar");
+    assert.ok(denied.errors.length > 0);
+    await assert.rejects(f.review(denied), status(409, "DRAFT_CHANGED"));
+  }
+});
+
+test("Pages rejects invalid composition modes and binds the chosen mode to a draft", async () => {
+  const f = await fixture();
+  const snapshot = await f.refresh();
+  for (const invalid of [null, "automatic", 0, {}, []])
+    await assert.rejects(f.prepare(snapshot, invalid), status(422));
+  const custom = await f.prepare(snapshot, "custom");
+  const calendar = await f.prepare(snapshot, "calendar");
+  assert.equal(custom.compositionMode, "custom");
+  assert.equal(calendar.compositionMode, "calendar");
+  assert.notEqual(custom.contentHash, calendar.contentHash);
+  await assert.rejects(
+    f.request(`/api/messages/${calendar.draftId}/review`, {
+      contentHash: custom.contentHash,
+      confirmed: true,
+      acknowledgedWarnings: calendar.warnings.map((issue) => issue.id),
+    }),
+    status(409, "DRAFT_CHANGED"),
+  );
+});
 
 test("Pages demo works without Google SDK and reports browser storage explicitly", async () => {
   const gateway = new FakeGoogle();

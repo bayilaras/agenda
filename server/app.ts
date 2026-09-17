@@ -8,9 +8,15 @@ import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { DateTime } from "luxon";
+import {
+  generateCalendarMessage,
+  isCalendarSelectable,
+  validateCalendarEvents,
+} from "../shared/calendar-message.ts";
 import type {
   AgendaEvent,
   Draft,
+  CompositionMode,
   Leader,
   SessionInfo,
   Snapshot,
@@ -427,6 +433,10 @@ export function createApplication(overrides: Partial<AppConfig> = {}) {
         503,
         "Kalender belum berhasil diperiksa. Muat ulang sebelum menyalin.",
       );
+    const selectable =
+      saved.draft.compositionMode === "calendar"
+        ? isCalendarSelectable
+        : isSelectable;
     const changed =
       saved.profileHash !== hash(leader) ||
       saved.draft.templateVersion !== TEMPLATE_VERSION ||
@@ -437,7 +447,7 @@ export function createApplication(overrides: Partial<AppConfig> = {}) {
             (event) =>
               event.id === id &&
               event.revision === saved.revisions[id] &&
-              isSelectable(event),
+              selectable(event),
           ),
       );
     if (changed)
@@ -614,6 +624,13 @@ export function createApplication(overrides: Partial<AppConfig> = {}) {
     res.json(result);
   });
   app.post("/api/messages/prepare", async (request, res) => {
+    const requestedMode = request.body?.compositionMode;
+    if (
+      requestedMode !== undefined &&
+      requestedMode !== "calendar" &&
+      requestedMode !== "custom"
+    )
+      throw new HttpError(422, "Mode penyusunan pesan tidak valid.");
     const req = request as unknown as SessionRequest,
       leader = leaderFor(req, req.body?.leaderId),
       date = dateFor(req.body?.date);
@@ -653,15 +670,25 @@ export function createApplication(overrides: Partial<AppConfig> = {}) {
         "Agenda terbaru berbeda. Periksa kembali kegiatan dan pelengkap sebelum membuat pesan.",
         { snapshot },
       );
-    const validation = validateEvents(
+    const compositionMode: CompositionMode = requestedMode ?? "custom";
+    const selectable =
+      compositionMode === "calendar" ? isCalendarSelectable : isSelectable;
+    const validate =
+      compositionMode === "calendar" ? validateCalendarEvents : validateEvents;
+    const generate =
+      compositionMode === "calendar"
+        ? generateCalendarMessage
+        : generateMessage;
+    const validation = validate(
       events,
       leader,
       date,
-      snapshot.events.filter(isSelectable).length,
+      snapshot.events.filter(selectable).length,
     );
-    const plainText = generateMessage(events, leader, date),
+    const plainText = generate(events, leader, date),
       contentHash = hash({
         plainText,
+        compositionMode,
         profile: leader,
         eventIds,
         revisions,
@@ -670,6 +697,7 @@ export function createApplication(overrides: Partial<AppConfig> = {}) {
       });
     const draft: Draft = {
       draftId: randomUUID(),
+      compositionMode,
       plainText,
       contentHash,
       templateVersion: TEMPLATE_VERSION,

@@ -148,6 +148,12 @@ Pemilik dapat memutus koneksi melalui aksi koneksi aplikasi. Endpoint `POST /api
 
 ## Alur penggunaan
 
+Mode awal **Dari Google Calendar** menyusun pesan langsung dari judul, waktu, lokasi, seluruh keterangan, akses rapat, dan tautan lampiran kalender. Tidak perlu mengisi ulang pokok agenda, pelaksanaan, kehadiran, kode sandi, atau bahan pada formulir. Keterangan bebas tanpa label khusus tetap dicantumkan; informasi opsional yang tidak tersedia dilewati. Judul dan waktu yang tidak valid tetap perlu diperbaiki pada kalender. Tautan PDF dicantumkan, tetapi isi PDF tidak diekstrak.
+
+Pilih pimpinan/tanggal dan kegiatan → **Buat Pesan** → periksa pratinjau → **Salin Pesan**. Hanya satu konfirmasi isi pada pratinjau; tidak ada pemeriksaan wajib per kolom. Kalender dibaca ulang untuk menjaga sumber tetap terbaru. Isian pelengkap lama tetap tersimpan dan tersedia melalui mode **Dengan penyesuaian**, tetapi tidak menggantikan informasi sumber pada mode otomatis.
+
+Alur **Dengan penyesuaian** jika membutuhkan isian tambahan:
+
 1. Masuk, pilih pimpinan dan tanggal; perhatikan zona waktu profil serta status koneksi.
 2. Pilih kegiatan yang akan dicantumkan. Acara privat/batal/tidak hadir tidak layak dipilih. Pilihan awal kosong.
 3. Buka **Lengkapi**, bandingkan sumber dengan informasi pesan, isi kehadiran, pelaksanaan, pokok agenda, akses rapat, dan bahan yang telah diperiksa; simpan. Data tambahan disimpan aplikasi dan tidak mengubah Google Calendar.
@@ -159,6 +165,8 @@ Pemilik dapat memutus koneksi melalui aksi koneksi aplikasi. Endpoint `POST /api
 Jam/tanggal/judul sumber yang salah diperbaiki di Google, lalu dimuat ulang. `confirmed` dari Google tidak berarti pimpinan pasti hadir. Tautan bahan tidak membuktikan penerima mempunyai izin membuka; periksa dengan akun penerima uji. Salin teks tidak melampirkan dokumen.
 
 ### Mengambil isian dari keterangan kalender
+
+Bagian ini berlaku pada formulir opsional mode **Dengan penyesuaian**. Mode otomatis menggunakan seluruh keterangan tanpa memerlukan tombol pengisian.
 
 Keterangan acara dapat mengisi tautan rapat Teams/Zoom/Google Meet, platform, `Meeting ID`, dan `Passcode`/`Password`. Label dapat diikuti nilai pada baris yang sama atau baris berikutnya. Tautan di balik teks HTML seperti **Join the meeting** juga dikenali. Label Indonesia seperti `Agenda:`, `Bahan Rapat:`, dan `Keterangan:` tetap didukung. Kredensial dipertahankan persis; shortlink tidak dibuka atau ditebak tujuannya.
 

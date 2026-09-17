@@ -32,6 +32,7 @@ import {
   zoneLabel,
 } from "../shared/domain";
 import type { Issue, SessionInfo } from "../shared/types";
+import { validateCalendarEvents } from "../shared/calendar-message";
 import { api, setCsrf } from "./api";
 import { useAgenda } from "./useAgenda";
 import { Brand } from "./components/Brand";
@@ -431,7 +432,13 @@ function Workspace({
           <div className="workflow" aria-label="Tahap penyusunan pesan">
             {[
               { n: 1, t: "Pilih kegiatan" },
-              { n: 2, t: "Lengkapi informasi" },
+              {
+                n: 2,
+                t:
+                  a.compositionMode === "calendar"
+                    ? "Buat pesan otomatis"
+                    : "Sesuaikan informasi",
+              },
               { n: 3, t: "Periksa & salin" },
             ].map(({ n, t }) => (
               <div
@@ -538,6 +545,42 @@ function Workspace({
                 {a.loading ? "Memuat…" : "Muat Ulang"}
               </button>
             </div>
+          </section>
+          <section className="composition-panel" aria-label="Sumber isi pesan">
+            <div>
+              <strong>Isi pesan otomatis dari kalender</strong>
+              <p>
+                Judul, waktu, lokasi, keterangan, akses rapat, dan tautan
+                lampiran langsung digunakan. Cukup pilih kegiatan dan buat
+                pesan.
+              </p>
+            </div>
+            <div
+              className="composition-options"
+              role="group"
+              aria-label="Cara menyusun pesan"
+            >
+              <button
+                className={`button ${a.compositionMode === "calendar" ? "primary" : "secondary"}`}
+                aria-pressed={a.compositionMode === "calendar"}
+                onClick={() => a.changeCompositionMode("calendar")}
+              >
+                Dari Google Calendar
+              </button>
+              <button
+                className={`button ${a.compositionMode === "custom" ? "primary" : "secondary"}`}
+                aria-pressed={a.compositionMode === "custom"}
+                onClick={() => a.changeCompositionMode("custom")}
+              >
+                Dengan penyesuaian
+              </button>
+            </div>
+            {a.compositionMode === "custom" && (
+              <p>
+                Isian tambahan yang pernah disimpan digunakan dalam mode
+                penyesuaian ini.
+              </p>
+            )}
           </section>
           {a.error && (
             <div className="alert error page-error" role="alert">
@@ -684,10 +727,13 @@ function Workspace({
                       <EventCard
                         key={event.id}
                         event={event}
+                        compositionMode={a.compositionMode}
                         leader={a.leader!}
                         selected={a.selected.includes(event.id)}
                         onSelect={() => a.toggle(event.id)}
-                        validation={validateEvents(
+                        validation={(a.compositionMode === "calendar"
+                          ? validateCalendarEvents
+                          : validateEvents)(
                           [
                             {
                               ...event,
@@ -747,8 +793,10 @@ function Workspace({
                     <h2>Pemeriksaan kegiatan</h2>
                     <span className={`badge ${errorCount ? "amber" : "green"}`}>
                       {errorCount
-                        ? `${errorCount} perlu dilengkapi`
-                        : "Data wajib lengkap"}
+                        ? `${errorCount} perlu diperiksa`
+                        : a.compositionMode === "calendar"
+                          ? "Siap dari kalender"
+                          : "Data wajib lengkap"}
                     </span>
                   </div>
                   {a.validation.errors.map((issue) => (
@@ -798,7 +846,9 @@ function Workspace({
                   {!errorCount && !warningCount && (
                     <p className="validation-success">
                       <Check size={15} />
-                      Kegiatan terpilih sudah lengkap. Lanjutkan membuat pesan.
+                      {a.compositionMode === "calendar"
+                        ? "Data kalender siap digunakan. Langsung buat pesan tanpa mengisi formulir."
+                        : "Kegiatan terpilih sudah lengkap. Lanjutkan membuat pesan."}
                     </p>
                   )}
                   {a.dirty && (
@@ -814,13 +864,14 @@ function Workspace({
                   <Sparkles size={17} />
                 </span>
                 <p>
-                  <strong>Rapi sejak awal.</strong> Lengkapi informasi dari
-                  sumber yang Anda periksa. Pesan disusun dengan format yang
-                  konsisten.
+                  <strong>Kalender sebagai sumber.</strong> Informasi yang
+                  tersedia disusun otomatis. Untuk memperbarui jadwal atau
+                  keterangan, ubah di Google Calendar lalu Muat Ulang.
                 </p>
               </div>
             </div>
             <Preview
+              compositionMode={a.compositionMode}
               draft={a.draft}
               eventTitles={Object.fromEntries(
                 a.events.map((event) => [event.id, event.sourceTitle]),
@@ -892,10 +943,11 @@ function Workspace({
             <li>
               <span>02</span>
               <div>
-                <h3>Lengkapi informasi</h3>
+                <h3>Buat pesan otomatis</h3>
                 <p>
-                  Buka Lengkapi atau Detail, isi berdasarkan sumber, lalu
-                  Simpan. Jadwal asli tetap dikelola melalui Google Calendar.
+                  Gunakan mode Dari Google Calendar, lalu Buat Pesan. Informasi
+                  kalender langsung dipakai. Pilih Dengan penyesuaian hanya jika
+                  ingin memakai isian tambahan.
                 </p>
               </div>
             </li>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AgendaEvent,
+  CompositionMode,
   Draft,
   Leader,
   Snapshot,
@@ -13,9 +14,17 @@ import {
   validateEvents,
 } from "../shared/domain";
 import { api, ApiError } from "./api";
+import {
+  isCalendarSelectable,
+  validateCalendarEvents,
+} from "../shared/calendar-message";
 import { writeCanonicalText } from "./clipboard";
 
 export function useAgenda(notify: (message: string) => void) {
+  const [compositionMode, setCompositionMode] =
+    useState<CompositionMode>("calendar");
+  const modeRef = useRef(compositionMode);
+  modeRef.current = compositionMode;
   const [leaders, setLeaders] = useState<Leader[]>([]);
   const [leaderId, setLeaderId] = useState("");
   const [date, setDate] = useState(todayInZone("Asia/Jakarta"));
@@ -59,13 +68,17 @@ export function useAgenda(notify: (message: string) => void) {
     edits[e.id] ? { ...e, supplement: edits[e.id] } : e,
   );
   const chosen = visibleEvents.filter((e) => selected.includes(e.id));
-  const selectable = events.filter(isSelectable);
+  const selectable = events.filter(
+    compositionMode === "calendar" ? isCalendarSelectable : isSelectable,
+  );
   const validation = useMemo(
     () =>
       leader
-        ? validateEvents(chosen, leader, date, selectable.length)
+        ? (compositionMode === "calendar"
+            ? validateCalendarEvents
+            : validateEvents)(chosen, leader, date, selectable.length)
         : { errors: [], warnings: [] },
-    [JSON.stringify(chosen), leader, date, selectable.length],
+    [JSON.stringify(chosen), leader, date, selectable.length, compositionMode],
   );
   const invalidate = useCallback(() => {
     generation.current++;
@@ -135,7 +148,13 @@ export function useAgenda(notify: (message: string) => void) {
         setExternalChange(false);
         setSelected((previous) =>
           previous.filter((key) =>
-            next.events.some((e) => e.id === key && isSelectable(e)),
+            next.events.some(
+              (e) =>
+                e.id === key &&
+                (modeRef.current === "calendar"
+                  ? isCalendarSelectable(e)
+                  : isSelectable(e)),
+            ),
           ),
         );
       } catch (e) {
@@ -209,6 +228,25 @@ export function useAgenda(notify: (message: string) => void) {
       invalidate();
     });
   }
+  function changeCompositionMode(next: CompositionMode) {
+    guard(() => {
+      setCompositionMode(next);
+      setExpanded(null);
+      setDraft(null);
+      setSelected((previous) =>
+        previous.filter((id) =>
+          events.some(
+            (event) =>
+              event.id === id &&
+              (next === "calendar"
+                ? isCalendarSelectable(event)
+                : isSelectable(event)),
+          ),
+        ),
+      );
+      invalidate();
+    });
+  }
   async function save(id: string) {
     const event = events.find((e) => e.id === id);
     if (!event) return;
@@ -240,7 +278,11 @@ export function useAgenda(notify: (message: string) => void) {
         delete n[id];
         return n;
       });
-      if (!isSelectable(next))
+      if (
+        !(compositionMode === "calendar"
+          ? isCalendarSelectable(next)
+          : isSelectable(next))
+      )
         setSelected((prev) => prev.filter((key) => key !== id));
       invalidate();
       notify("Informasi pelengkap berhasil disimpan.");
@@ -300,6 +342,7 @@ export function useAgenda(notify: (message: string) => void) {
     const context = seq.current;
     try {
       const next = await api<Draft>("/api/messages/prepare", {
+        compositionMode,
         leaderId,
         date,
         eventIds: selected,
@@ -362,7 +405,7 @@ export function useAgenda(notify: (message: string) => void) {
                 JSON.stringify(event.sourceCandidates)
             )
               changes.push(
-                `${event.sourceTitle}: deskripsi atau akses rapat berubah. Buka Detail dan bandingkan sumber sebelum menyimpan.`,
+                `${event.sourceTitle}: deskripsi atau akses rapat berubah. Buat ulang pesan untuk menggunakan sumber terbaru.`,
               );
           }
           if (old.revision !== event.revision)
@@ -385,7 +428,13 @@ export function useAgenda(notify: (message: string) => void) {
         setSnapshot(next);
         setSelected((prev) =>
           prev.filter((id) =>
-            next.events.some((e) => e.id === id && isSelectable(e)),
+            next.events.some(
+              (e) =>
+                e.id === id &&
+                (modeRef.current === "calendar"
+                  ? isCalendarSelectable(e)
+                  : isSelectable(e)),
+            ),
           ),
         );
       }
@@ -479,7 +528,9 @@ export function useAgenda(notify: (message: string) => void) {
           : stale
             ? "Perbarui pesan sebelum melanjutkan pemeriksaan."
             : draft.errors.length
-              ? "Lengkapi kolom wajib sebelum menyalin pesan."
+              ? compositionMode === "calendar"
+                ? "Periksa data sumber kalender sebelum menyalin pesan."
+                : "Lengkapi kolom wajib sebelum menyalin pesan."
               : draft.warnings.some((w) => !acknowledged.includes(w.id))
                 ? "Periksa dan akui setiap perhatian di atas."
                 : !confirmed
@@ -488,6 +539,8 @@ export function useAgenda(notify: (message: string) => void) {
                     ? "Menyimpan hasil pemeriksaan…"
                     : "";
   return {
+    compositionMode,
+    changeCompositionMode,
     leaders,
     leader,
     leaderId,

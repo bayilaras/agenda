@@ -1,5 +1,13 @@
 # Verifikasi pengembang — 17 September 2026
 
+## Pesan otomatis tanpa formulir
+
+- Mode awal UI **Dari Google Calendar** menggunakan sumber acara langsung. Mode **Dengan penyesuaian** tetap tersedia; API yang tidak mengirim `compositionMode` mempertahankan perilaku lama.
+- `npm test`: **115 lulus, 0 gagal**. Cakupan baru mencakup keterangan bebas dan HTML, tautan undangan, lampiran, waktu sumber, isian manual lama yang tidak memengaruhi hasil, data privat/batal, batas panjang, mode tidak valid, sumber berubah dan masa berlaku draf.
+- Lampiran sumber dipisahkan dari isian bahan manual agar tautan kalender tetap tersedia setelah pemuatan pelengkap lama. Isi PDF tidak diekstrak.
+- Konfirmasi akhir pada pratinjau tetap diperlukan; mode otomatis tidak meminta pengisian atau pemeriksaan per kolom.
+- `npm run build:pages` berhasil, termasuk TypeScript dan pemindaian aset publik. Browser Chromium lokal: mode kalender terpilih sejak awal; pilih semua memilih empat kegiatan dan mengecualikan kegiatan privat; Buat Pesan menghasilkan pratinjau tanpa membuka formulir; satu konfirmasi mengaktifkan Salin Pesan dan notifikasi salin berhasil tampil. Beralih ke mode penyesuaian mengosongkan draf lama dan menampilkan formulir opsional. Log browser yang diperiksa tidak memuat error/warning. Data uji menggunakan demo sintetis, bukan akun Google pengguna.
+
 ## Pembacaan keterangan kalender dan Teams
 
 - `npm test`: **99 lulus, 0 gagal**; `npm run build:pages` berhasil, termasuk TypeScript dan pemeriksaan aset publik.

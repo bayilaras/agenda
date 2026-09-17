@@ -1,5 +1,10 @@
 import { DateTime, IANAZone } from "luxon";
 import {
+  generateCalendarMessage,
+  isCalendarSelectable,
+  validateCalendarEvents,
+} from "../../shared/calendar-message";
+import {
   emptySupplement,
   generateMessage,
   isSelectable,
@@ -12,6 +17,7 @@ import {
 } from "../../shared/domain";
 import type {
   AgendaEvent,
+  CompositionMode,
   Draft,
   SessionInfo,
   Snapshot,
@@ -674,6 +680,13 @@ export class BrowserRuntime {
   }
 
   private async prepare(context: Context, body: JsonObject): Promise<Draft> {
+    if (
+      body.compositionMode !== undefined &&
+      body.compositionMode !== "calendar" &&
+      body.compositionMode !== "custom"
+    )
+      fail("Mode penyusunan pesan tidak valid.");
+    const compositionMode: CompositionMode = body.compositionMode ?? "custom";
     const state = await this.state(context);
     const leader = this.leader(state, body.leaderId),
       date = validDate(body.date);
@@ -711,15 +724,24 @@ export class BrowserRuntime {
         409,
         { snapshot },
       );
-    const validation = validateEvents(
+    const selectable =
+      compositionMode === "calendar" ? isCalendarSelectable : isSelectable;
+    const validate =
+      compositionMode === "calendar" ? validateCalendarEvents : validateEvents;
+    const generate =
+      compositionMode === "calendar"
+        ? generateCalendarMessage
+        : generateMessage;
+    const validation = validate(
       events,
       leader,
       date,
-      snapshot.events.filter(isSelectable).length,
+      snapshot.events.filter(selectable).length,
     );
-    const plainText = generateMessage(events, leader, date);
+    const plainText = generate(events, leader, date);
     const contentHash = await hash({
       plainText,
+      compositionMode,
       profile: leader,
       eventIds,
       revisions,
@@ -728,6 +750,7 @@ export class BrowserRuntime {
     });
     const draft: Draft = {
       draftId: crypto.randomUUID(),
+      compositionMode,
       plainText,
       contentHash,
       templateVersion: TEMPLATE_VERSION,
@@ -787,6 +810,10 @@ export class BrowserRuntime {
     this.checkExpiry(saved);
     const profileHash = await hash(leader);
     this.requireConnection(context);
+    const selectable =
+      saved.draft.compositionMode === "calendar"
+        ? isCalendarSelectable
+        : isSelectable;
     if (
       profileHash !== saved.profileHash ||
       saved.draft.templateVersion !== TEMPLATE_VERSION ||
@@ -797,7 +824,7 @@ export class BrowserRuntime {
             (event) =>
               event.id === eventId &&
               event.revision === saved.revisions[eventId] &&
-              isSelectable(event),
+              selectable(event),
           ),
       )
     )

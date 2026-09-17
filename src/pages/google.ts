@@ -334,9 +334,12 @@ export async function mapBrowserGoogleEvent(
     )
       event.supplement.platform = source.conferenceData.conferenceSolution.name;
   }
-  event.supplement.materialLinks = (source.attachments ?? [])
+  event.sourceAttachments = (source.attachments ?? [])
     .map((item) => ({ title: item.title ?? "", url: safeHttps(item.fileUrl) }))
     .filter((item) => item.url);
+  event.supplement.materialLinks = event.sourceAttachments.map((item) => ({
+    ...item,
+  }));
   if (event.supplement.materialLinks.length)
     event.supplement.materialsStatus = "unchecked";
   return event;

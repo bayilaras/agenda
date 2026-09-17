@@ -11,8 +11,9 @@ import {
   RefreshCw,
   WandSparkles,
 } from "lucide-react";
-import type { Draft, Issue } from "../../shared/types";
+import type { CompositionMode, Draft, Issue } from "../../shared/types";
 interface Props {
+  compositionMode?: CompositionMode;
   draft: Draft | null;
   eventTitles: Record<string, string>;
   selectedCount: number;
@@ -32,6 +33,7 @@ interface Props {
   onIssue: (issue: Issue) => void;
 }
 export function Preview({
+  compositionMode = "custom",
   draft,
   eventTitles,
   selectedCount,
@@ -71,7 +73,11 @@ export function Preview({
           </span>
           <div>
             <h2>Pratinjau pesan</h2>
-            <p>Template formal · Versi 1.0</p>
+            <p>
+              {compositionMode === "calendar"
+                ? "Otomatis dari Google Calendar"
+                : "Pesan dengan penyesuaian"}
+            </p>
           </div>
         </div>
         <span
@@ -100,7 +106,11 @@ export function Preview({
           )}
           {draft.errors.length > 0 && (
             <div className="draft-issues">
-              <strong>Lengkapi sebelum disalin</strong>
+              <strong>
+                {compositionMode === "calendar"
+                  ? "Periksa sumber kalender"
+                  : "Lengkapi sebelum disalin"}
+              </strong>
               {draft.errors.map((i) => (
                 <button key={i.id} onClick={() => onIssue(i)}>
                   {i.message}
@@ -150,9 +160,9 @@ export function Preview({
           </div>
           <h3>Dari agenda menjadi pesan.</h3>
           <p>
-            Pilih kegiatan, lengkapi informasinya,
-            <br />
-            lalu buat pesan untuk pimpinan Anda.
+            {compositionMode === "calendar"
+              ? "Pilih kegiatan lalu Buat Pesan. Informasi yang sudah ada di kalender langsung disusun, tanpa mengisi ulang."
+              : "Pilih kegiatan, sesuaikan informasinya, lalu buat pesan untuk pimpinan Anda."}
           </p>
           <div className="preview-steps">
             <span>

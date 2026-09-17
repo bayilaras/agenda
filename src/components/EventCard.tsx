@@ -11,15 +11,21 @@ import {
   Pencil,
 } from "lucide-react";
 import { DateTime } from "luxon";
-import { isSelectable } from "../../shared/domain";
+import { isSelectable, isSafeHttpsUrl } from "../../shared/domain";
+import {
+  isCalendarSelectable,
+  calendarDescriptionText,
+} from "../../shared/calendar-message";
 import type {
   AgendaEvent,
+  CompositionMode,
   Leader,
   Supplement,
   Validation,
 } from "../../shared/types";
 import { EventEditor } from "./EventEditor";
 interface Props {
+  compositionMode?: CompositionMode;
   event: AgendaEvent;
   leader: Leader;
   selected: boolean;
@@ -37,7 +43,10 @@ interface Props {
 export function EventCard(props: Props) {
   const { event, leader, selected, onSelect, validation, expanded, onExpand } =
     props;
-  const selectable = isSelectable(event);
+  const automatic = props.compositionMode === "calendar";
+  const selectable = automatic
+    ? isCalendarSelectable(event)
+    : isSelectable(event);
   const errors = validation.errors.length > 0;
   const warnings = validation.warnings.length > 0;
   const state = !selectable
@@ -55,8 +64,9 @@ export function EventCard(props: Props) {
     hybrid: "Hibrida",
     "": "Belum ditentukan",
   }[event.supplement.mode];
-  const location =
-    event.supplement.mode === "online"
+  const location = automatic
+    ? event.sourceLocation
+    : event.supplement.mode === "online"
       ? event.supplement.platform
       : event.supplement.location || event.sourceLocation;
   return (
@@ -80,7 +90,7 @@ export function EventCard(props: Props) {
               <Clock3 size={13} />
               {event.allDay
                 ? "Seharian"
-                : `${time(event.start)} – ${event.supplement.timeFormat === "until-finished" ? "selesai" : time(event.end)}`}
+                : `${time(event.start)}${event.endTimeUnspecified ? "" : ` – ${!automatic && event.supplement.timeFormat === "until-finished" ? "selesai" : time(event.end)}`}`}
             </span>
             <span className={`event-status ${state}`}>
               {state === "ready" ? (
@@ -93,7 +103,9 @@ export function EventCard(props: Props) {
               {
                 {
                   ready: "Siap",
-                  incomplete: "Perlu dilengkapi",
+                  incomplete: automatic
+                    ? "Periksa kalender"
+                    : "Perlu dilengkapi",
                   attention: "Perlu perhatian",
                   locked: "Tidak dapat dipilih",
                 }[state]
@@ -108,7 +120,7 @@ export function EventCard(props: Props) {
               ) : (
                 <MapPin size={14} />
               )}{" "}
-              {mode}
+              {automatic ? "Dari kalender" : mode}
             </span>
             {location && (
               <>
@@ -130,14 +142,14 @@ export function EventCard(props: Props) {
           )}
           <div className="event-bottom">
             <span className="event-attendance">
-              {
-                {
-                  attending: "Akan hadir",
-                  undecided: "Kehadiran belum diputuskan",
-                  represented: `Diwakilkan${event.supplement.representative ? ` · ${event.supplement.representative}` : ""}`,
-                  absent: "Tidak hadir",
-                }[event.supplement.attendance]
-              }
+              {automatic
+                ? "Informasi disusun otomatis"
+                : {
+                    attending: "Akan hadir",
+                    undecided: "Kehadiran belum diputuskan",
+                    represented: `Diwakilkan${event.supplement.representative ? ` · ${event.supplement.representative}` : ""}`,
+                    absent: "Tidak hadir",
+                  }[event.supplement.attendance]}
             </span>
             <div className="event-actions">
               {event.htmlLink.startsWith("https://") && (
@@ -159,7 +171,7 @@ export function EventCard(props: Props) {
                   aria-expanded={expanded}
                 >
                   <Pencil size={13} />
-                  {errors ? "Lengkapi" : "Detail"}
+                  {automatic ? "Lihat sumber" : errors ? "Lengkapi" : "Detail"}
                   {expanded ? (
                     <ChevronUp size={14} />
                   ) : (
@@ -171,17 +183,65 @@ export function EventCard(props: Props) {
           </div>
         </div>
       </div>
-      {expanded && (
-        <EventEditor
-          event={event}
-          value={props.edited}
-          onChange={props.onChange}
-          onSave={props.onSave}
-          onCancel={props.onCancel}
-          saving={props.saving}
-          dirty={props.dirty}
-        />
-      )}
+      {expanded &&
+        event.readable &&
+        event.status !== "cancelled" &&
+        (automatic ? (
+          <div className="calendar-details">
+            {event.sourceLocation && (
+              <p>
+                <strong>Lokasi:</strong> {event.sourceLocation}
+              </p>
+            )}
+            <pre>
+              {calendarDescriptionText(event.description) ||
+                "Tidak ada keterangan tambahan pada kalender."}
+            </pre>
+            {!!event.sourceCandidates?.length && (
+              <div>
+                <strong>Akses rapat dari kalender</strong>
+                {event.sourceCandidates.map((candidate, index) => (
+                  <p key={index}>
+                    {candidate.field === "meetingUrl"
+                      ? "Tautan rapat"
+                      : candidate.field === "meetingId"
+                        ? "ID rapat"
+                        : "Kode sandi"}
+                    : {candidate.value}
+                  </p>
+                ))}
+              </div>
+            )}
+            {!!event.sourceAttachments?.length && (
+              <div>
+                <strong>Lampiran kalender</strong>
+                {event.sourceAttachments
+                  .filter((item) => isSafeHttpsUrl(item.url))
+                  .map((item, index) => (
+                    <p key={index}>
+                      <a href={item.url} target="_blank" rel="noreferrer">
+                        {item.title || "Lampiran"}
+                      </a>
+                    </p>
+                  ))}
+              </div>
+            )}
+            <p className="field-help">
+              Data ini langsung digunakan pada pesan. Perubahan sumber dilakukan
+              di Google Calendar.
+            </p>
+          </div>
+        ) : (
+          <EventEditor
+            event={event}
+            value={props.edited}
+            onChange={props.onChange}
+            onSave={props.onSave}
+            onCancel={props.onCancel}
+            saving={props.saving}
+            dirty={props.dirty}
+          />
+        ))}
     </article>
   );
 }

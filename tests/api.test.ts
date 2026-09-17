@@ -106,10 +106,15 @@ async function fixture() {
     assert.equal(response.status, 200);
     return response.body as Snapshot;
   }
-  async function prepare(snap: Snapshot, eventIds = [snap.events[0].id]) {
+  async function prepare(
+    snap: Snapshot,
+    eventIds = [snap.events[0].id],
+    compositionMode?: unknown,
+  ) {
     return request("/api/messages/prepare", "POST", {
       leaderId: snap.leaderId,
       date: snap.date,
+      ...(compositionMode !== undefined ? { compositionMode } : {}),
       eventIds,
       snapshotHash: snap.hash,
       revisions: Object.fromEntries(
@@ -214,6 +219,101 @@ test("authentication, CSRF rotation, object ACL and administrator privileges are
       (await f.request("/api/agenda?leaderId=allowed&date=2026-09-17")).status,
       403,
     );
+  } finally {
+    await f.close();
+  }
+});
+
+test("calendar API composes from Google source without editing or confirming old supplements", async () => {
+  const f = await fixture();
+  try {
+    await f.loginDemo();
+    let snapshot = await f.snapshot();
+    const incompleteId = snapshot.events[1].id;
+    const strict = (await f.prepare(snapshot, [incompleteId])).body as Draft;
+    assert.equal(strict.compositionMode, "custom");
+    assert.ok(strict.errors.length > 0);
+    const calendar = (await f.prepare(snapshot, [incompleteId], "calendar"))
+      .body as Draft;
+    assert.equal(calendar.compositionMode, "calendar");
+    assert.deepEqual(calendar.errors, []);
+    assert.match(
+      calendar.plainText,
+      /Undangan koordinasi melalui Zoom Meeting/,
+    );
+    const existing = snapshot.events[0];
+    assert.equal(
+      (
+        await f.request(`/api/agenda/${existing.id}/supplement`, "PATCH", {
+          leaderId: snapshot.leaderId,
+          date: snapshot.date,
+          expectedRevision: existing.revision,
+          supplement: {
+            ...emptySupplement(),
+            attendance: "absent",
+            title: "Judul manual lama",
+            agenda: "Agenda manual lama",
+          },
+        })
+      ).status,
+      200,
+    );
+    snapshot = await f.snapshot();
+    const result = await f.prepare(snapshot, [existing.id], "calendar");
+    assert.equal(result.status, 200);
+    const draft = result.body as Draft;
+    assert.deepEqual(draft.errors, []);
+    assert.match(draft.plainText, /Briefing dan arahan pelaksanaan tugas/);
+    assert.match(draft.plainText, /Evaluasi layanan pertanahan/);
+    assert.doesNotMatch(draft.plainText, /manual lama/);
+    assert.equal(draft.readyToCopy, false);
+    const reviewBody = {
+      contentHash: draft.contentHash,
+      acknowledgedWarnings: draft.warnings.map((issue) => issue.id),
+      confirmed: true,
+    };
+    assert.equal(
+      (
+        await f.request(`/api/messages/${draft.draftId}/review`, "POST", {
+          ...reviewBody,
+          confirmed: false,
+        })
+      ).status,
+      422,
+    );
+    assert.equal(
+      (
+        await f.request(
+          `/api/messages/${draft.draftId}/review`,
+          "POST",
+          reviewBody,
+        )
+      ).status,
+      200,
+    );
+    assert.equal(
+      (await f.snapshot()).events[0].supplement.attendance,
+      "absent",
+    );
+    const denied = (
+      await f.prepare(snapshot, [snapshot.events[4].id], "calendar")
+    ).body as Draft;
+    assert.ok(denied.errors.length > 0);
+    assert.equal(
+      (
+        await f.request(`/api/messages/${denied.draftId}/review`, "POST", {
+          contentHash: denied.contentHash,
+          acknowledgedWarnings: denied.warnings.map((issue) => issue.id),
+          confirmed: true,
+        })
+      ).status,
+      409,
+    );
+    for (const invalid of [null, "automatic", 0, {}, []])
+      assert.equal(
+        (await f.prepare(snapshot, [existing.id], invalid)).status,
+        422,
+      );
   } finally {
     await f.close();
   }
@@ -749,6 +849,10 @@ test("live source changes require reconciliation; failed fetches retain suppleme
       draft = prepared.body as Draft;
     assert.equal(prepared.status, 200);
     assert.deepEqual(draft.errors, []);
+    const calendarBeforeChange = (
+      await f.prepare(saved, [source.id], "calendar")
+    ).body as Draft;
+    assert.deepEqual(calendarBeforeChange.errors, []);
     source = {
       ...source,
       sourceVersion: "changed-source",
@@ -761,6 +865,26 @@ test("live source changes require reconciliation; failed fetches retain suppleme
       "Agenda awal",
     );
     const newSnapshot = changed.body.snapshot as Snapshot;
+    assert.equal(
+      (
+        await f.request(
+          `/api/messages/${calendarBeforeChange.draftId}/review`,
+          "POST",
+          {
+            contentHash: calendarBeforeChange.contentHash,
+            acknowledgedWarnings: calendarBeforeChange.warnings.map(
+              (issue) => issue.id,
+            ),
+            confirmed: true,
+          },
+        )
+      ).status,
+      409,
+    );
+    const calendarAfterChange = (
+      await f.prepare(newSnapshot, [source.id], "calendar")
+    ).body as Draft;
+    assert.deepEqual(calendarAfterChange.errors, []);
     const unreviewed = (await f.prepare(newSnapshot)).body as Draft;
     assert.ok(unreviewed.errors.some((error) => error.code === "E08"));
     await f.request(`/api/agenda/${source.id}/supplement`, "PATCH", {
