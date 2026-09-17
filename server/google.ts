@@ -1,7 +1,9 @@
 import { DateTime } from "luxon";
 import { setTimeout as delay } from "node:timers/promises";
 import {
+  conferencePlatform,
   emptySupplement,
+  extractMeetingAccess,
   parseDescription,
   sortEvents,
 } from "../shared/domain.ts";
@@ -138,6 +140,10 @@ export function mapGoogleEvent(
   };
   event.supplement = emptySupplement(event);
   if (!redacted) {
+    const descriptionAccess = extractMeetingAccess(description);
+    event.conflicts = [
+      ...new Set([...event.conflicts, ...descriptionAccess.conflicts]),
+    ];
     const candidates: {
       field: "meetingUrl" | "meetingId" | "passcode";
       value: string;
@@ -157,11 +163,19 @@ export function mapGoogleEvent(
       for (const value of [entry.passcode, entry.password])
         if (value) candidates.push({ field: "passcode", value, origin });
     }
+    const hangoutUrl = safeHttps(source.hangoutLink);
+    if (hangoutUrl)
+      candidates.push({
+        field: "meetingUrl",
+        value: hangoutUrl,
+        origin: "Google Calendar · tautan konferensi",
+      });
+    const allCandidates = [...descriptionAccess.candidates, ...candidates];
     // Values remain explicit candidates. A Google conference code is never assumed to be a Zoom ID.
     Object.assign(event, {
-      sourceCandidates: candidates.filter(
+      sourceCandidates: allCandidates.filter(
         (candidate, index) =>
-          candidates.findIndex(
+          allCandidates.findIndex(
             (item) =>
               item.field === candidate.field && item.value === candidate.value,
           ) === index,
@@ -181,21 +195,44 @@ export function mapGoogleEvent(
     }
     const videos = [
       ...new Set(
-        [
-          ...(source.conferenceData?.entryPoints ?? [])
-            .filter((entry) => entry.entryPointType === "video")
-            .map((entry) => safeHttps(entry.uri)),
-          safeHttps(source.hangoutLink),
-        ].filter(Boolean),
+        event
+          .sourceCandidates!.filter(
+            (candidate) => candidate.field === "meetingUrl",
+          )
+          .map((candidate) => safeHttps(candidate.value))
+          .filter(Boolean),
       ),
     ];
-    if (videos.length === 1) event.supplement.meetingUrl = videos[0];
+    if (videos.length === 1 && !event.supplement.meetingUrl)
+      event.supplement.meetingUrl = videos[0];
     if (videos.length > 1)
       event.conflicts.push(
         "Sumber memuat beberapa tautan konferensi. Pilih tautan yang benar dan periksa ulang sumber.",
       );
-    if (source.conferenceData?.conferenceSolution?.name)
-      event.supplement.platform = source.conferenceData.conferenceSolution.name;
+    const platforms = [
+      ...new Set(
+        [
+          ...descriptionAccess.platforms,
+          ...videos.map(conferencePlatform),
+        ].filter(Boolean),
+      ),
+    ];
+    if (
+      platforms.length > 1 &&
+      candidates.some((candidate) => candidate.field === "meetingUrl")
+    )
+      event.conflicts.push(
+        "Deskripsi dan konferensi kalender menyebut platform rapat yang berbeda. Pilih platform beserta tautan yang sesuai dan periksa sumber.",
+      );
+    if (!event.supplement.platform) {
+      if (platforms.length === 1) event.supplement.platform = platforms[0];
+      else if (
+        platforms.length === 0 &&
+        source.conferenceData?.conferenceSolution?.name
+      )
+        event.supplement.platform =
+          source.conferenceData.conferenceSolution.name;
+    }
     event.supplement.materialLinks = (source.attachments ?? [])
       .map((item) => ({
         title: item.title ?? "",

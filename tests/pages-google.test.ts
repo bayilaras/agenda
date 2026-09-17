@@ -196,7 +196,10 @@ test("popup close after a valid token callback does not cancel calendar retrieva
   const google = new BrowserGoogle("client", { ...oauth, ...network });
   const connection = google.connect();
   oauth.configs[0].callback(validToken);
-  assert.ok(finishCalendarList, "Calendar retrieval starts after authorization");
+  assert.ok(
+    finishCalendarList,
+    "Calendar retrieval starts after authorization",
+  );
   oauth.configs[0].error_callback({ type: "popup_closed" });
   finishCalendarList(Response.json({ items: [primary] }));
   const session = await connection;
@@ -465,6 +468,95 @@ test("conference candidates preserve raw characters and do not substitute a Goog
   assert.ok(value.conflicts.length >= 2);
 });
 
+test("Teams description and native Meet expose both sources without replacing inferred access", async () => {
+  const teamsUrl =
+    "https://teams.microsoft.com/meet/123456789?p=synthetic%2Bpass";
+  const meetUrl = "https://meet.google.com/abc-defg-hij";
+  const value = await mapBrowserGoogleEvent(
+    {
+      ...source,
+      description: `<p>Microsoft Teams</p><p><a href="${teamsUrl}">Join the meeting now</a></p><p>Meeting ID: 001 234 567</p><p>Passcode: 00.X!?</p>`,
+      conferenceData: {
+        conferenceSolution: { name: "Google Meet" },
+        entryPoints: [
+          {
+            entryPointType: "video",
+            uri: meetUrl,
+            meetingCode: "abc-defg-hij",
+          },
+        ],
+      },
+      hangoutLink: meetUrl,
+    },
+    leader,
+    "owner",
+  );
+  assert.equal(value.supplement.meetingUrl, teamsUrl);
+  assert.equal(value.supplement.platform, "Microsoft Teams");
+  assert.equal(value.supplement.meetingId, "001 234 567");
+  assert.equal(value.supplement.passcode, "00.X!?");
+  assert.deepEqual(
+    new Set(
+      value.sourceCandidates
+        ?.filter((item) => item.field === "meetingUrl")
+        .map((item) => item.value),
+    ),
+    new Set([teamsUrl, meetUrl]),
+  );
+  assert.equal(
+    value.sourceCandidates?.filter(
+      (item) => item.field === "meetingUrl" && item.value === meetUrl,
+    ).length,
+    1,
+  );
+  assert.ok(value.conflicts.some((conflict) => conflict.includes("tautan")));
+  assert.ok(value.conflicts.some((conflict) => conflict.includes("platform")));
+  assert.equal(value.supplement.sourceReviewed, false);
+  assert.equal(value.supplement.accessVerified, false);
+});
+
+test("matching description and hangout links are deduplicated without a false conflict", async () => {
+  const meetUrl = "https://meet.google.com/abc-defg-hij";
+  const value = await mapBrowserGoogleEvent(
+    {
+      ...source,
+      description: `<a href="${meetUrl}">Join Google Meet</a>`,
+      hangoutLink: meetUrl,
+    },
+    leader,
+    "owner",
+  );
+  assert.equal(value.supplement.meetingUrl, meetUrl);
+  assert.equal(value.supplement.platform, "Google Meet");
+  assert.equal(
+    value.sourceCandidates?.filter((item) => item.field === "meetingUrl")
+      .length,
+    1,
+  );
+  assert.deepEqual(value.conflicts, []);
+});
+
+test("a differing hangout link remains selectable even without conference entry points", async () => {
+  const teamsUrl = "https://teams.microsoft.com/meet/123456789?p=synthetic";
+  const meetUrl = "https://meet.google.com/xyz-abcd-efg";
+  const value = await mapBrowserGoogleEvent(
+    {
+      ...source,
+      description: teamsUrl,
+      hangoutLink: meetUrl,
+    },
+    leader,
+    "owner",
+  );
+  assert.equal(value.supplement.meetingUrl, teamsUrl);
+  assert.ok(
+    value.sourceCandidates?.some(
+      (item) => item.field === "meetingUrl" && item.value === meetUrl,
+    ),
+  );
+  assert.ok(value.conflicts.some((conflict) => conflict.includes("tautan")));
+});
+
 test("revoked tokens clear connection; access denial and quota failures stay distinct", async () => {
   for (const [status, reason, expected, expectedStatus] of [
     [401, "authError", "GOOGLE_RECONNECT", 401],
@@ -487,11 +579,18 @@ test("revoked tokens clear connection; access denial and quota failures stay dis
 });
 
 test("disabled Calendar API during login is reported as project setup, not a selected-calendar permission", async () => {
-  const network = fetchMock(() => Response.json({ error: {
-    errors: [{ reason: "accessNotConfigured" }],
-    details: [{ reason: "SERVICE_DISABLED" }],
-    message: "Private provider diagnostic must not reach the interface",
-  } }, { status: 403 }));
+  const network = fetchMock(() =>
+    Response.json(
+      {
+        error: {
+          errors: [{ reason: "accessNotConfigured" }],
+          details: [{ reason: "SERVICE_DISABLED" }],
+          message: "Private provider diagnostic must not reach the interface",
+        },
+      },
+      { status: 403 },
+    ),
+  );
   const google = new BrowserGoogle("client", { ...oauthMock(), ...network });
   await assert.rejects(google.connect(), (error: unknown) => {
     assert.ok(error instanceof ApiError);
@@ -499,7 +598,10 @@ test("disabled Calendar API during login is reported as project setup, not a sel
     assert.equal(error.data.httpStatus, 403);
     assert.equal(error.status, 503);
     assert.match(error.message, /Google Calendar API/);
-    assert.doesNotMatch(error.message, /kalender yang dipilih|Private provider/);
+    assert.doesNotMatch(
+      error.message,
+      /kalender yang dipilih|Private provider/,
+    );
     return true;
   });
   assert.equal(google.isConnected(), false);

@@ -3240,3 +3240,14 @@ pre {
 .google-connection-error details { font-size: 12px; }
 .google-connection-error summary { cursor: pointer; }
 .google-connection-error code { display: block; margin-top: 8px; }
+.description-fill {
+  padding: 14px;
+  margin: 16px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--green-soft);
+  display: grid;
+  gap: 10px;
+}
+.description-fill p { margin: 5px 0 0; font-size: 12px; line-height: 1.6; }
+.description-fill .button { justify-self: start; }

@@ -158,6 +158,14 @@ Pemilik dapat memutus koneksi melalui aksi koneksi aplikasi. Endpoint `POST /api
 
 Jam/tanggal/judul sumber yang salah diperbaiki di Google, lalu dimuat ulang. `confirmed` dari Google tidak berarti pimpinan pasti hadir. Tautan bahan tidak membuktikan penerima mempunyai izin membuka; periksa dengan akun penerima uji. Salin teks tidak melampirkan dokumen.
 
+### Mengambil isian dari keterangan kalender
+
+Keterangan acara dapat mengisi tautan rapat Teams/Zoom/Google Meet, platform, `Meeting ID`, dan `Passcode`/`Password`. Label dapat diikuti nilai pada baris yang sama atau baris berikutnya. Tautan di balik teks HTML seperti **Join the meeting** juga dikenali. Label Indonesia seperti `Agenda:`, `Bahan Rapat:`, dan `Keterangan:` tetap didukung. Kredensial dipertahankan persis; shortlink tidak dibuka atau ditebak tujuannya.
+
+Acara yang belum mempunyai pelengkap menggunakan nilai yang dikenali sebagai isian awal. Untuk pelengkap yang sudah disimpan, buka **Lengkapi → Isi dari keterangan**. Tombol ini hanya melengkapi kolom kosong, mempertahankan isian manual, dan meminta pemeriksaan sebelum **Simpan**. Jika tautan atau platform manual berbeda, bandingkan kandidat akses rapat terlebih dahulu. Beberapa nilai atau platform yang bertentangan memerlukan pemilihan dan pemeriksaan sumber.
+
+Pengembangan ini mengikuti pilihan pengguna untuk mendahulukan keterangan kalender, memperluas format parser pada PRD awal. Isi PDF lampiran belum diekstrak. Pokok agenda yang tidak tersedia pada label sumber dan keputusan kehadiran tetap perlu diisi sendiri.
+
 ## Pemulihan masalah
 
 | Kondisi                                  | Tindakan                                                                                                                         |

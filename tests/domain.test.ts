@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   addDays,
+  conferencePlatform,
   emptySupplement,
+  extractMeetingAccess,
   formatDate,
   formatEventTime,
   generateMessage,
@@ -461,5 +463,235 @@ test("brackets and template-like text that belong to source data remain unchange
     errors(value).some(
       (issue) => issue.code === "E09" && issue.field === "passcode",
     ),
+  );
+});
+
+test("Teams invitation aliases fill only explicit access facts and keep credentials exact", () => {
+  const description = [
+    "Microsoft Teams",
+    "Need help?",
+    "Join the meeting now",
+    "https://teams.microsoft.com/meet/1234567890123?p=Test.00%2BToken)&context=Demo]",
+    "Meeting ID:",
+    "001 234 567 890",
+    "Passcode:",
+    "  AbC.01!  ",
+    "",
+    "For organizers:",
+    "Meeting options",
+    "Do not forward this invitation.",
+  ].join("\n");
+  const parsed = parseDescription(description);
+  assert.equal(parsed.values["ID Rapat"], "001 234 567 890");
+  assert.equal(parsed.values["Kode Sandi"], "  AbC.01!  ");
+  const supplement = emptySupplement({
+    sourceTitle: "Rapat program kerja",
+    description,
+  });
+  assert.equal(supplement.meetingId, "001 234 567 890");
+  assert.equal(supplement.passcode, "  AbC.01!  ");
+  assert.equal(
+    supplement.meetingUrl,
+    "https://teams.microsoft.com/meet/1234567890123?p=Test.00%2BToken)&context=Demo]",
+  );
+  assert.equal(supplement.platform, "Microsoft Teams");
+  assert.equal(supplement.mode, "online");
+  assert.equal(supplement.attendance, "undecided");
+  assert.equal(supplement.agenda, "");
+  assert.equal(supplement.accessCode, "unknown");
+  assert.equal(supplement.accessVerified, false);
+  assert.equal(supplement.sourceReviewed, false);
+});
+
+test("English access aliases consume a single value line and do not capture unknown headers or footers", () => {
+  const parsed = parseDescription(
+    "Meeting ID:  001 22  \nUnknown field: retained in source\npAsScOdE:\n\n A:1. \n\nUnknown footer: remain outside code\nFree text",
+  );
+  assert.equal(parsed.values["ID Rapat"], " 001 22  ");
+  assert.equal(parsed.values["Kode Sandi"], " A:1. ");
+  assert.ok(parsed.plainText.includes("Unknown footer: remain outside code"));
+  assert.equal(parseDescription("Password: A:1").values["Kode Sandi"], "A:1");
+  assert.equal(
+    parseDescription("Passcode:\nShortlink: https://example.com").values[
+      "Kode Sandi"
+    ],
+    "",
+  );
+  assert.equal(
+    parseDescription("Passcode:\nNeed help?\nOther text").values["Kode Sandi"],
+    "",
+  );
+  assert.equal(
+    parseDescription("Passcode:\nMeeting ID: 001").values["Kode Sandi"],
+    "",
+  );
+  assert.equal(parseDescription("Password:\nA:1").values["Kode Sandi"], "A:1");
+});
+
+test("canonical Indonesian multiline parsing remains compatible alongside scalar aliases", () => {
+  const parsed = parseDescription(
+    "Agenda:\nBaris pertama.\nBaris kedua.\nKeterangan:\nBaris keterangan.\nLanjutan.\nMeeting ID: 001 002\nPassword: Kode.\nFooter",
+  );
+  assert.equal(parsed.values.Agenda, "Baris pertama.\nBaris kedua.");
+  assert.equal(parsed.values.Keterangan, "Baris keterangan.\nLanjutan.");
+  assert.equal(parsed.values["ID Rapat"], "001 002");
+  assert.equal(parsed.values["Kode Sandi"], "Kode.");
+  assert.equal(
+    parseDescription("Kode Sandi:\nA\nB").values["Kode Sandi"],
+    "A\nB",
+  );
+});
+
+test("HTML anchor targets provide join URLs, are decoded once, and dedupe against visible text", () => {
+  const primary =
+    "https://teams.microsoft.com/l/meetup-join/19%3ameeting_TEST%40thread.v2/0?context=%7B%22Tid%22%3A%22demo%22%7D&p=Test.)]&x=%2B";
+  const description = `<p>Microsoft Teams</p><a href="${primary.replace(/&/g, "&amp;")}">Join the meeting now</a><p>${primary.replace(/&/g, "&amp;")}</p><p>Meeting ID: 001 234</p><p>Passcode: A&lt;b&gt;C &amp; 01.</p>`;
+  const access = extractMeetingAccess(description);
+  assert.equal(
+    access.candidates.filter((item) => item.field === "meetingUrl").length,
+    1,
+  );
+  assert.equal(
+    access.candidates.find((item) => item.field === "meetingUrl")?.value,
+    primary,
+  );
+  assert.equal(
+    access.candidates.find((item) => item.field === "passcode")?.value,
+    "A<b>C & 01.",
+  );
+  assert.deepEqual(access.platforms, ["Microsoft Teams"]);
+  assert.deepEqual(access.conflicts, []);
+  assert.equal(emptySupplement({ description }).passcode, "A<b>C & 01.");
+});
+
+test("query credentials retain raw and encoded punctuation exactly for Teams and Zoom", () => {
+  for (const url of [
+    "https://teams.microsoft.com/meet/123456789?p=Code)",
+    "https://teams.microsoft.com/meet/123456789?p=Code]",
+    "https://teams.microsoft.com/meet/123456789?p=Code%29%5D&c=Keep.",
+    "https://us02web.zoom.us/j/123456789?pwd=AbC.)]%2B&omn=001",
+  ]) {
+    assert.equal(extractMeetingAccess(url).candidates[0]?.value, url);
+    assert.equal(
+      extractMeetingAccess(`<a href='${url.replace(/&/g, "&amp;")}'>Join</a>`)
+        .candidates[0]?.value,
+      url,
+    );
+  }
+});
+
+test("shortlinks, Teams help/options, unsafe URLs and spoofed hosts are never used as join URLs", () => {
+  const primary = "https://teams.microsoft.com/meet/123456789?p=Demo";
+  const description = `<a href="https://aka.ms/JoinTeamsMeeting">Need help?</a><a href="https://tinyurl.com/example">Shortlink</a><a href="${primary}">Join meeting now</a><a href="https://teams.microsoft.com/meetingOptions/?id=demo">Meeting options</a>`;
+  assert.deepEqual(
+    extractMeetingAccess(description).candidates.map((item) => item.value),
+    [primary],
+  );
+  for (const url of [
+    "javascript:alert(1)",
+    "http://teams.microsoft.com/meet/123",
+    "https://teams.microsoft.com.evil.example/meet/123",
+    "https://zoom.us.evil.example/j/123",
+    "https://teams.microsoft.com/v2/",
+    "https://teams.microsoft.com/meet/options",
+    "https://zoom.us/signin",
+    "https://meet.google.com/new",
+    "https://aka.ms/JoinTeamsMeeting",
+  ])
+    assert.equal(conferencePlatform(url), "");
+  assert.equal(
+    conferencePlatform("https://teams.live.com/meet/123456789?p=Demo"),
+    "Microsoft Teams",
+  );
+  assert.equal(
+    conferencePlatform("https://zoom.us/j/123456789?pwd=AbC.01"),
+    "Zoom Meeting",
+  );
+  assert.equal(
+    conferencePlatform("https://us04web.zoom.us/my/example"),
+    "Zoom Meeting",
+  );
+  assert.equal(
+    conferencePlatform("https://meet.google.com/abc-defg-hij"),
+    "Google Meet",
+  );
+});
+
+test("multiple providers and repeated access labels remain explicit candidates and block source review", () => {
+  const description =
+    "https://teams.microsoft.com/meet/123456789?p=Demo\nhttps://meet.google.com/abc-defg-hij\nMeeting ID: 001\nID Rapat: 002\nPasscode: First.\nPassword: Second.";
+  const access = extractMeetingAccess(description);
+  assert.equal(access.candidates.length, 6);
+  assert.deepEqual(access.platforms, ["Microsoft Teams", "Google Meet"]);
+  assert.ok(access.conflicts.length >= 4);
+  const supplement = emptySupplement({ description });
+  assert.equal(supplement.meetingUrl, "");
+  assert.equal(supplement.meetingId, "");
+  assert.equal(supplement.passcode, "");
+  assert.equal(supplement.platform, "");
+  assert.equal(supplement.mode, "");
+  const value = event({ description });
+  value.supplement.sourceReviewed = false;
+  assert.ok(
+    errors(value).some(
+      (issue) => issue.code === "E08" && issue.field === "sourceReviewed",
+    ),
+  );
+});
+
+test("inferred online mode respects physical location, explicit execution, and unrelated title wording", () => {
+  const url = "https://teams.microsoft.com/meet/123456789?p=Demo";
+  assert.equal(
+    emptySupplement({ description: url, sourceLocation: "Ruang Rapat A" }).mode,
+    "",
+  );
+  assert.equal(
+    emptySupplement({ description: `Pelaksanaan: Luring\n${url}` }).mode,
+    "offline",
+  );
+  assert.equal(
+    emptySupplement({
+      description: `Pelaksanaan: Hibrida\n${url}`,
+      sourceLocation: "Ruang Rapat A",
+    }).mode,
+    "hybrid",
+  );
+  assert.equal(
+    emptySupplement({ description: `Pelaksanaan: Menunggu keputusan\n${url}` })
+      .mode,
+    "",
+  );
+  assert.equal(
+    emptySupplement({ sourceTitle: "Pembahasan Microsoft Teams dan Zoom" })
+      .platform,
+    "",
+  );
+  assert.equal(
+    emptySupplement({ sourceTitle: "Pembahasan Microsoft Teams dan Zoom" })
+      .mode,
+    "",
+  );
+  assert.ok(
+    extractMeetingAccess(
+      `Pelaksanaan: Secara daring melalui Zoom Meeting\n${url}`,
+    ).conflicts.some((message) => message.includes("platform")),
+  );
+});
+
+test("hidden HTML links are ignored while real meeting links are extracted safely", () => {
+  const hidden = "https://teams.microsoft.com/meet/111111111?p=Hidden";
+  const visible = "https://meet.google.com/abc-defg-hij";
+  const description = `<!-- <a href="${hidden}">Hidden</a> --><script><a href="${hidden}">Hidden</a></script><a href="${visible}">Join</a><p>Passcode: Demo.01</p>`;
+  assert.deepEqual(
+    extractMeetingAccess(description)
+      .candidates.filter((item) => item.field === "meetingUrl")
+      .map((item) => item.value),
+    [visible],
+  );
+  assert.ok(!plainSourceText(description).includes("Hidden"));
+  const attributes = `<a data-href="${hidden}" title=" href='${hidden}'" href="${visible}">Join</a>`;
+  assert.deepEqual(
+    extractMeetingAccess(attributes).candidates.map((item) => item.value),
+    [visible],
   );
 });

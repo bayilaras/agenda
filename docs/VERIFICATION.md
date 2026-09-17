@@ -1,5 +1,13 @@
 # Verifikasi pengembang — 17 September 2026
 
+## Pembacaan keterangan kalender dan Teams
+
+- `npm test`: **99 lulus, 0 gagal**; `npm run build:pages` berhasil, termasuk TypeScript dan pemeriksaan aset publik.
+- Parser diuji dengan label Inggris satu/baris berikutnya, tautan HTML dan teks, query/kode persis, footer undangan, host palsu, beberapa kandidat, serta pelaksanaan luring. Semua data pengujian sintetis.
+- Mapper browser dan server mempertahankan sumber Teams ketika konferensi Google Meet berbeda, menampilkan kandidat untuk dibandingkan, serta mempertahankan pelengkap manual setelah kalender dimuat ulang.
+- Fixture `tests/browser-description.html` diperiksa di Chromium lewat Vite Pages: acara baru terisi dari Teams; tombol **Isi dari keterangan** melengkapi tiga kolom kosong sambil mempertahankan ID manual `MANUAL-001`; status meminta pemeriksaan dan Simpan; konflik Teams/Meet tampil bersama kandidatnya. Simulasi Simpan berhasil. Tidak ditemukan error/warning pada log browser yang diperiksa.
+- Fixture tidak disertakan dalam build Pages, tidak meminta OAuth, dan tidak mengakses kalender nyata. Pembacaan isi PDF tidak termasuk pengembangan ini. Pengujian terhadap acara asli pengguna tetap dilakukan saat pengguna memuat ulang kalender.
+
 ## Perbaikan koneksi Google pada browser
 
 - API Calendar yang belum aktif kini dibedakan dari penolakan izin kalender berdasarkan `accessNotConfigured` / `SERVICE_DISABLED`. Halaman login memberi petunjuk dan tautan aktivasi resmi; payload, token, dan URL dari respons Google tidak ditampilkan.
@@ -15,7 +23,7 @@ Lingkungan: Windows, Node.js 25.5.0, npm 11.8.0. API lokal Express, SQLite lokal
 ## Hasil yang dijalankan
 
 - `npm run build`: kompilasi TypeScript dan build Vite berhasil.
-- `npm test`: **80 lulus, 0 gagal** — 16 tes domain, 7 tes integrasi API server, 2 tes clipboard, 7 tes konfigurasi pribadi, 18 tes gateway Google browser, 9 tes klasifikasi error Google, 16 tes runtime browser, dan 5 tes IndexedDB.
+- `npm test` pada perbaikan koneksi sebelumnya: **80 lulus, 0 gagal**. Jumlah terbaru setelah perluasan pembaca keterangan tercatat pada bagian di atas.
 - `npm install` terakhir: audit dependensi melaporkan 0 kerentanan.
 - Browser: masuk demo, memilih profil secara eksplisit, memuat lima kegiatan, dan memblokir pilihan kegiatan privat.
 - Browser: satu kegiatan lengkap dapat dibuat, peringatan pilihan sebagian harus diakui, konfirmasi isi mengaktifkan tombol Salin Pesan, dan promise clipboard berhasil menampilkan notifikasi yang benar.

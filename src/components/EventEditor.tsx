@@ -1,4 +1,5 @@
 import type { AgendaEvent, Supplement } from "../../shared/types";
+import { useState } from "react";
 import {
   AlertCircle,
   Check,
@@ -9,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { parseDescription } from "../../shared/domain";
+import { fillFromDescription } from "../description-fill";
 
 interface Props {
   event: AgendaEvent;
@@ -28,6 +30,8 @@ export function EventEditor({
   saving,
   dirty,
 }: Props) {
+  const descriptionFill = fillFromDescription(event, value);
+  const [filledCount, setFilledCount] = useState<number | null>(null);
   const set = <K extends keyof Supplement>(field: K, next: Supplement[K]) =>
     onChange({ ...value, [field]: next });
   const id = (field: string) => `field-${event.id}-${field}`;
@@ -71,6 +75,39 @@ export function EventEditor({
             <p>{event.sourceTitle || "Judul sumber belum tersedia"}</p>
             <small>Jadwal dan judul sumber diperbaiki melalui kalender.</small>
           </div>
+        </div>
+        <div className="description-fill">
+          <div>
+            <strong>Ambil informasi dari keterangan kalender</strong>
+            <p>
+              Isian kosong dilengkapi dari sumber yang dikenali. Isian Anda
+              tetap dipertahankan.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="button secondary small"
+            disabled={descriptionFill.fields.length === 0}
+            onClick={() => {
+              onChange(descriptionFill.value);
+              setFilledCount(descriptionFill.fields.length);
+            }}
+          >
+            <FileText size={15} /> Isi dari keterangan
+          </button>
+          <p className="field-help" role="status">
+            {filledCount !== null
+              ? `${filledCount} isian dilengkapi. Periksa hasilnya, lalu Simpan.`
+              : descriptionFill.fields.length
+                ? `${descriptionFill.fields.length} isian kosong dapat dilengkapi.`
+                : "Isian yang dikenali sudah terisi atau belum ada informasi tambahan yang dapat diambil."}
+          </p>
+          {descriptionFill.accessConflict && (
+            <p className="field-help">
+              Tautan atau platform yang sudah diisi berbeda dengan keterangan.
+              Bandingkan kandidat akses rapat di bawah sebelum memilihnya.
+            </p>
+          )}
         </div>
         <div className="form-section">
           <h4>Informasi kegiatan</h4>
@@ -353,7 +390,8 @@ export function EventEditor({
             true,
           )}
         </div>
-        {(event.conflicts.length > 0 ||
+        {(filledCount !== null ||
+          event.conflicts.length > 0 ||
           event.reviewedSourceVersion !== event.sourceVersion ||
           event.endTimeUnspecified ||
           (value.location !== event.sourceLocation &&

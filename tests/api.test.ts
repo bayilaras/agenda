@@ -543,6 +543,154 @@ test("Google completes every page, filters non-agenda types and rejects partial 
   }
 });
 
+test("server mapping retains Teams description values and exposes conflicting native Meet sources", () => {
+  const teamsUrl =
+    "https://teams.microsoft.com/meet/123456789?p=synthetic%2Bpass";
+  const meetUrl = "https://meet.google.com/abc-defg-hij";
+  const source = {
+    id: "conflicting-meeting-sources",
+    summary: "Rapat sintetis",
+    description: `<p>Microsoft Teams</p><p><a href="${teamsUrl}">Join the meeting now</a></p><p>Meeting ID: 001 234 567</p><p>Passcode: 00.X!?</p>`,
+    start: { dateTime: "2026-09-17T10:00:00+07:00" },
+    end: { dateTime: "2026-09-17T11:00:00+07:00" },
+    conferenceData: {
+      conferenceSolution: { name: "Google Meet" },
+      entryPoints: [
+        { entryPointType: "video", uri: meetUrl, meetingCode: "abc-defg-hij" },
+      ],
+    },
+    hangoutLink: meetUrl,
+  };
+  const mapped = mapGoogleEvent(source, leader, "owner");
+  assert.equal(mapped.supplement.meetingUrl, teamsUrl);
+  assert.equal(mapped.supplement.platform, "Microsoft Teams");
+  assert.equal(mapped.supplement.meetingId, "001 234 567");
+  assert.equal(mapped.supplement.passcode, "00.X!?");
+  assert.deepEqual(
+    new Set(
+      mapped.sourceCandidates
+        ?.filter((item) => item.field === "meetingUrl")
+        .map((item) => item.value),
+    ),
+    new Set([teamsUrl, meetUrl]),
+  );
+  assert.equal(
+    mapped.sourceCandidates?.filter(
+      (item) => item.field === "meetingUrl" && item.value === meetUrl,
+    ).length,
+    1,
+  );
+  assert.ok(mapped.conflicts.some((conflict) => conflict.includes("tautan")));
+  assert.ok(mapped.conflicts.some((conflict) => conflict.includes("platform")));
+  const redacted = mapGoogleEvent(
+    { ...source, visibility: "private" },
+    leader,
+    "reader",
+  );
+  assert.equal(redacted.sourceCandidates, undefined);
+  assert.equal(redacted.supplement.meetingUrl, "");
+  assert.equal(redacted.supplement.meetingId, "");
+  assert.equal(redacted.supplement.passcode, "");
+});
+
+test("server mapping deduplicates matching description and hangout meeting links", () => {
+  const meetUrl = "https://meet.google.com/abc-defg-hij";
+  const value = mapGoogleEvent(
+    {
+      id: "matching-meeting-sources",
+      description: `<a href="${meetUrl}">Join Google Meet</a>`,
+      hangoutLink: meetUrl,
+    },
+    leader,
+    "owner",
+  );
+  assert.equal(value.supplement.meetingUrl, meetUrl);
+  assert.equal(value.supplement.platform, "Google Meet");
+  assert.equal(
+    value.sourceCandidates?.filter((item) => item.field === "meetingUrl")
+      .length,
+    1,
+  );
+  assert.deepEqual(value.conflicts, []);
+});
+
+test("refreshing conflicting meeting sources preserves saved manual access and requests a new review", async () => {
+  const f = await fixture();
+  try {
+    f.config.googleClientId = "test-id";
+    f.config.googleClientSecret = "test-secret";
+    f.store.set("google", "tokens", {
+      access_token: "synthetic-token",
+      refresh_token: "synthetic-refresh",
+      expiresAt: f.config.now() + 3600_000,
+      scope: "",
+    });
+    const teamsUrl = "https://teams.microsoft.com/meet/123456789?p=synthetic";
+    const source = {
+      id: "manual-meeting-access",
+      summary: "Rapat sintetis",
+      description: teamsUrl,
+      start: { dateTime: "2026-09-17T10:00:00+07:00" },
+      end: { dateTime: "2026-09-17T11:00:00+07:00" },
+      hangoutLink: "https://meet.google.com/abc-defg-hij",
+    };
+    let mapped = mapGoogleEvent(source, leader, "owner");
+    f.google.events = async () => ({ events: [mapped], excludedCount: 0 });
+    await f.request("/api/session");
+    await f.request("/api/auth/login", "POST", {
+      email: "operator@example.test",
+      password: "synthetic-secret-123",
+    });
+    const refresh = async () => {
+      const response = await f.request("/api/agenda/refresh", "POST", {
+        leaderId: leader.id,
+        date: "2026-09-17",
+      });
+      assert.equal(response.status, 200);
+      return response.body as Snapshot;
+    };
+    await refresh();
+    const manual = {
+      ...mapped.supplement,
+      meetingUrl: "https://teams.microsoft.com/meet/987654321?p=manual",
+      meetingId: "009 876 543",
+      passcode: " 00.Manual! ",
+      sourceReviewed: true,
+    };
+    const saved = await f.request(
+      `/api/agenda/${mapped.id}/supplement`,
+      "PATCH",
+      {
+        leaderId: leader.id,
+        date: "2026-09-17",
+        expectedRevision: 0,
+        supplement: manual,
+      },
+    );
+    assert.equal(saved.status, 200);
+    mapped = mapGoogleEvent(
+      { ...source, hangoutLink: "https://meet.google.com/xyz-abcd-efg" },
+      leader,
+      "owner",
+    );
+    const refreshed = (await refresh()).events[0];
+    assert.equal(refreshed.supplement.meetingUrl, manual.meetingUrl);
+    assert.equal(refreshed.supplement.meetingId, manual.meetingId);
+    assert.equal(refreshed.supplement.passcode, manual.passcode);
+    assert.equal(refreshed.supplement.sourceReviewed, false);
+    assert.ok(
+      refreshed.sourceCandidates?.some((item) => item.value === teamsUrl),
+    );
+    assert.ok(
+      refreshed.sourceCandidates?.some(
+        (item) => item.value === "https://meet.google.com/xyz-abcd-efg",
+      ),
+    );
+  } finally {
+    await f.close();
+  }
+});
+
 test("live source changes require reconciliation; failed fetches retain supplements; revoked access hides cached data", async () => {
   const f = await fixture();
   try {

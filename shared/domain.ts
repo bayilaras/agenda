@@ -21,6 +21,21 @@ const LABELS = [
   "Keterangan",
   "Format Waktu",
 ] as const;
+const ACCESS_ALIASES: Record<string, "ID Rapat" | "Kode Sandi"> = {
+  "meeting id": "ID Rapat",
+  passcode: "Kode Sandi",
+  password: "Kode Sandi",
+};
+export interface MeetingAccessCandidate {
+  field: "meetingUrl" | "meetingId" | "passcode";
+  value: string;
+  origin: string;
+}
+export interface MeetingAccessExtraction {
+  candidates: MeetingAccessCandidate[];
+  platforms: string[];
+  conflicts: string[];
+}
 const MONTHS = [
   "Januari",
   "Februari",
@@ -77,8 +92,7 @@ export function zoneLabel(timeZone: string): string {
   );
 }
 
-/** Returns safe plain text only. Never interprets or executes source HTML. */
-export function plainSourceText(source: string): string {
+function decodeSourceEntities(source: string): string {
   const entities: Record<string, string> = {
     amp: "&",
     lt: "<",
@@ -87,28 +101,120 @@ export function plainSourceText(source: string): string {
     apos: "'",
     nbsp: " ",
   };
+  return source.replace(
+    /&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi,
+    (whole, name: string) => {
+      if (!name.startsWith("#")) return entities[name.toLowerCase()] ?? whole;
+      const code =
+        name[1]?.toLowerCase() === "x"
+          ? Number.parseInt(name.slice(2), 16)
+          : Number.parseInt(name.slice(1), 10);
+      return code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff)
+        ? String.fromCodePoint(code)
+        : whole;
+    },
+  );
+}
+
+function withoutHiddenHtml(source: string): string {
   return source
-    .replace(/\r\n?/g, "\n")
+    .replace(/<!--[\s\S]*?(?:-->|$)/g, "")
     .replace(/<(script|style|iframe|object|svg)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
-    .replace(/<(script|style|iframe|object|svg)\b[^>]*>[\s\S]*$/gi, "")
-    .replace(/<br\s*\/?\s*>/gi, "\n")
-    .replace(/<\/(p|div|li|h[1-6]|tr)\s*>/gi, "\n")
-    .replace(/<[^>]*>/g, "")
-    .replace(
-      /&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos|nbsp);/gi,
-      (whole, name: string) => {
-        if (!name.startsWith("#")) return entities[name.toLowerCase()] ?? whole;
-        const code =
-          name[1]?.toLowerCase() === "x"
-            ? Number.parseInt(name.slice(2), 16)
-            : Number.parseInt(name.slice(1), 10);
-        return code > 0 &&
-          code <= 0x10ffff &&
-          !(code >= 0xd800 && code <= 0xdfff)
-          ? String.fromCodePoint(code)
-          : whole;
-      },
-    );
+    .replace(/<(script|style|iframe|object|svg)\b[^>]*>[\s\S]*$/gi, "");
+}
+
+/** Returns safe plain text only. Never interprets or executes source HTML. */
+export function plainSourceText(source: string): string {
+  return decodeSourceEntities(
+    withoutHiddenHtml(source)
+      .replace(/\r\n?/g, "\n")
+      .replace(/<br\s*\/?\s*>/gi, "\n")
+      .replace(/<\/(p|div|li|h[1-6]|tr)\s*>/gi, "\n")
+      .replace(/<[^>]*>/g, ""),
+  );
+}
+
+function descriptionLabel(line: string) {
+  const match = /^[ \t]*([^:]+?)[ \t]*:[ \t]?(.*)$/.exec(line);
+  if (!match) return undefined;
+  const name = match[1].trim().replace(/\s+/g, " ").toLocaleLowerCase("id");
+  const canonical =
+    LABELS.find((item) => item.toLocaleLowerCase("id") === name) ??
+    ACCESS_ALIASES[name];
+  return canonical
+    ? {
+        canonical,
+        scalar: Object.hasOwn(ACCESS_ALIASES, name),
+        value: match[2],
+      }
+    : undefined;
+}
+
+function invitationFooter(line: string): boolean {
+  return /^(?:need help\??|join (?:the )?meeting(?: now)?|meeting options|for organizers|dial in by phone|find a local number|reset dial-in pin|privacy and security|learn more|microsoft teams|_{3,}|-{3,})(?:\s|:|$)/i.test(
+    line.trim(),
+  );
+}
+
+function readDescription(description: string) {
+  const plainText = plainSourceText(description);
+  const values: Record<string, string> = {};
+  const entries: { label: string; value: string }[] = [];
+  const conflicts: string[] = [];
+  let label: string | undefined;
+  let lines: string[] = [];
+  const record = (name: string, value: string) => {
+    entries.push({ label: name, value });
+    if (Object.hasOwn(values, name)) {
+      const conflict = `Label ${name} berulang; pilih nilai yang benar.`;
+      if (!conflicts.includes(conflict)) conflicts.push(conflict);
+    } else values[name] = value;
+  };
+  const flush = () => {
+    if (!label) return;
+    // Empty separating lines are structure; spaces inside the actual value are preserved.
+    while (lines.length && lines[lines.length - 1] === "") lines.pop();
+    if (lines[0] === "") lines.shift();
+    record(label, lines.join("\n"));
+    label = undefined;
+    lines = [];
+  };
+  const sourceLines = plainText.split("\n");
+  for (let index = 0; index < sourceLines.length; index++) {
+    const line = sourceLines[index];
+    const item = descriptionLabel(line);
+    if (!item) {
+      if (label) lines.push(line);
+      continue;
+    }
+    flush();
+    if (item.scalar) {
+      let value = item.value;
+      if (!value.trim()) {
+        let next = index + 1;
+        while (next < sourceLines.length && !sourceLines[next].trim()) next++;
+        const nextIsHeader =
+          next < sourceLines.length &&
+          /^[\p{L}][\p{L} \t-]{1,60}:[ \t]+/u.test(sourceLines[next].trim());
+        if (
+          next < sourceLines.length &&
+          !nextIsHeader &&
+          !descriptionLabel(sourceLines[next]) &&
+          !invitationFooter(sourceLines[next]) &&
+          !/^https:\/\//i.test(sourceLines[next].trim())
+        ) {
+          value = sourceLines[next];
+          index = next;
+        }
+      }
+      record(item.canonical, value);
+    } else {
+      label = item.canonical;
+      lines = [item.value];
+    }
+  }
+  flush();
+  return { plainText, values, conflicts, entries };
 }
 
 export function parseDescription(description: string): {
@@ -116,50 +222,144 @@ export function parseDescription(description: string): {
   conflicts: string[];
   plainText: string;
 } {
-  const plainText = plainSourceText(description);
-  const values: Record<string, string> = {};
-  const conflicts: string[] = [];
-  let label: string | undefined;
-  let lines: string[] = [];
-  const flush = () => {
-    if (!label) return;
-    // Empty separating lines are structure; spaces inside the actual value are preserved.
-    while (lines.length && lines[lines.length - 1] === "") lines.pop();
-    if (lines[0] === "") lines.shift();
-    const value = lines.join("\n");
-    if (Object.hasOwn(values, label)) {
-      if (
-        !conflicts.includes(`Label ${label} berulang; pilih nilai yang benar.`)
-      )
-        conflicts.push(`Label ${label} berulang; pilih nilai yang benar.`);
-    } else values[label] = value;
-  };
-  for (const line of plainText.split("\n")) {
-    const match = /^[ \t]*([^:]+?)[ \t]*:[ \t]?(.*)$/.exec(line);
-    const canonical =
-      match &&
-      LABELS.find(
-        (item) =>
-          item.toLocaleLowerCase("id") ===
-          match[1].trim().toLocaleLowerCase("id"),
-      );
-    if (canonical && match) {
-      flush();
-      label = canonical;
-      lines = [match[2]];
-    } else if (label) lines.push(line);
-  }
-  flush();
+  const { values, conflicts, plainText } = readDescription(description);
   return { values, conflicts, plainText };
+}
+
+/** Recognizes meeting join URLs, never help, sign-in, or shortener URLs. */
+export function conferencePlatform(value: string): string {
+  if (!isSafeHttpsUrl(value)) return "";
+  const url = new URL(value);
+  const host = url.hostname.toLowerCase();
+  if (
+    (host === "teams.microsoft.com" || host === "teams.live.com") &&
+    /^\/(?:l\/meetup-join\/[^/]+(?:\/[^/]+)?|meet\/\d+)\/?$/i.test(url.pathname)
+  )
+    return "Microsoft Teams";
+  if (
+    (host === "zoom.us" || host.endsWith(".zoom.us")) &&
+    /^\/(?:j\/\d+|my\/[^/]+|wc\/join\/\d+)\/?$/i.test(url.pathname)
+  )
+    return "Zoom Meeting";
+  if (
+    host === "meet.google.com" &&
+    /^\/(?:[a-z]{3}-[a-z]{4}-[a-z]{3}|lookup\/[^/]+)\/?$/i.test(url.pathname)
+  )
+    return "Google Meet";
+  return "";
+}
+
+function normalizedPlatform(value: string): string {
+  if (/^microsoft teams(?: meeting)?$/i.test(value)) return "Microsoft Teams";
+  if (/^zoom(?: meeting)?$/i.test(value)) return "Zoom Meeting";
+  if (/^google meet$/i.test(value)) return "Google Meet";
+  return value;
+}
+
+export function extractMeetingAccess(
+  description: string,
+): MeetingAccessExtraction {
+  const parsed = readDescription(description);
+  const candidates: MeetingAccessCandidate[] = [];
+  const platforms: string[] = [];
+  const conflicts = [...parsed.conflicts];
+  const addPlatform = (platform: string) => {
+    if (platform && !platforms.includes(platform)) platforms.push(platform);
+  };
+  const add = (
+    field: MeetingAccessCandidate["field"],
+    value: string,
+    origin: string,
+  ) => {
+    if (
+      hasValue(value) &&
+      !candidates.some((item) => item.field === field && item.value === value)
+    )
+      candidates.push({ field, value, origin });
+  };
+  for (const entry of parsed.entries) {
+    if (entry.label === "ID Rapat")
+      add("meetingId", entry.value, "Keterangan Google Calendar · ID rapat");
+    if (entry.label === "Kode Sandi")
+      add("passcode", entry.value, "Keterangan Google Calendar · kode sandi");
+  }
+  const addUrl = (value: string, origin: string) => {
+    const platform = conferencePlatform(value);
+    if (platform) {
+      add("meetingUrl", value, origin);
+      addPlatform(platform);
+    }
+  };
+  // Read href without loading a DOM or following any URL, before HTML attributes are discarded.
+  const html = withoutHiddenHtml(description);
+  for (const match of html.matchAll(
+    /<a(?=[\s/>])(?:[^>"']|"[^"]*"|'[^']*')*>/gi,
+  )) {
+    const attributes = match[0].slice(2, -1);
+    for (const attribute of attributes.matchAll(
+      /([^\s=/>]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g,
+    )) {
+      if (attribute[1].toLowerCase() !== "href") continue;
+      addUrl(
+        decodeSourceEntities(
+          attribute[2] ?? attribute[3] ?? attribute[4] ?? "",
+        ),
+        "Keterangan Google Calendar · tautan HTML",
+      );
+      break;
+    }
+  }
+  for (const match of parsed.plainText.matchAll(/https:\/\/[^\s<>"']+/gi)) {
+    // Preserve the source token exactly, including query credentials and punctuation.
+    addUrl(match[0], "Keterangan Google Calendar · tautan teks");
+  }
+  if (
+    /^\s*Microsoft Teams(?: meeting)?(?:\s*[|·]?\s*Need help\??)?\s*$/im.test(
+      parsed.plainText,
+    )
+  )
+    addPlatform("Microsoft Teams");
+  const explicitPlatform = /\bmelalui\s+([^\n]+)/i
+    .exec(parsed.values.Pelaksanaan ?? "")?.[1]
+    ?.trim();
+  if (explicitPlatform) addPlatform(normalizedPlatform(explicitPlatform));
+  for (const field of ["meetingUrl", "meetingId", "passcode"] as const) {
+    if (candidates.filter((item) => item.field === field).length > 1)
+      conflicts.push(
+        `Keterangan memuat beberapa ${field === "meetingUrl" ? "tautan rapat" : field === "meetingId" ? "ID rapat" : "kode sandi"} berbeda. Pilih nilai yang benar.`,
+      );
+  }
+  if (platforms.length > 1)
+    conflicts.push(
+      "Keterangan menyebut beberapa platform rapat berbeda. Pilih platform dan jalur bergabung yang benar.",
+    );
+  if (
+    /^(?:secara\s+)?luring\b/i.test(parsed.values.Pelaksanaan ?? "") &&
+    candidates.some((item) => item.field === "meetingUrl")
+  )
+    conflicts.push(
+      "Pelaksanaan luring berbeda dengan kandidat tautan rapat daring. Periksa cara pelaksanaan pada sumber.",
+    );
+  return { candidates, platforms, conflicts };
 }
 
 export function emptySupplement(event: Partial<AgendaEvent> = {}): Supplement {
   const { values } = parseDescription(event.description ?? "");
+  const access = extractMeetingAccess(event.description ?? "");
+  const uniqueValue = (field: MeetingAccessCandidate["field"]) => {
+    const entries = access.candidates.filter((item) => item.field === field);
+    return entries.length === 1 ? entries[0].value : "";
+  };
   const execution = values.Pelaksanaan ?? "";
   const executionMode = /^(?:secara\s+)?(daring|luring|hibrida)\b/i
     .exec(execution)?.[1]
     ?.toLowerCase();
-  const platform = /\bmelalui\s+(.+)/i.exec(execution)?.[1]?.trim() ?? "";
+  const explicitPlatform =
+    /\bmelalui\s+(.+)/i.exec(execution)?.[1]?.trim() ?? "";
+  const platform =
+    access.platforms.length > 1
+      ? ""
+      : explicitPlatform || access.platforms[0] || "";
   return {
     title: event.sourceTitle ?? "",
     attendance: "undecided",
@@ -178,12 +378,16 @@ export function emptySupplement(event: Partial<AgendaEvent> = {}): Supplement {
           ? "offline"
           : executionMode === "hibrida"
             ? "hybrid"
-            : "",
+            : !execution.trim() &&
+                !event.sourceLocation?.trim() &&
+                access.platforms.length === 1
+              ? "online"
+              : "",
     location: event.sourceLocation ?? "",
     platform,
-    meetingUrl: "",
-    meetingId: values["ID Rapat"] ?? "",
-    passcode: values["Kode Sandi"] ?? "",
+    meetingUrl: uniqueValue("meetingUrl"),
+    meetingId: uniqueValue("meetingId"),
+    passcode: uniqueValue("passcode"),
     accessCode: "unknown",
     accessVerified: false,
     agenda: values.Agenda ?? "",
@@ -676,7 +880,7 @@ export function validateEvents(
       );
     if (
       (event.conflicts.length > 0 ||
-        parseDescription(event.description).conflicts.length > 0) &&
+        extractMeetingAccess(event.description).conflicts.length > 0) &&
       !s.sourceReviewed
     )
       add(
