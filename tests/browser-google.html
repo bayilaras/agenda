@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="id">
+  <meta charset="utf-8" />
+  <title>Uji koneksi Google dengan data sintetis</title>
+  <h1>Uji fetch browser</h1>
+  <p>Permintaan hanya menuju fixture lokal. Tidak membuka OAuth atau memakai akun Google.</p>
+  <button id="run">Jalankan pemeriksaan</button>
+  <pre id="result">Belum dijalankan</pre>
+  <script type="module">
+    import { BrowserGoogle, GOOGLE_SCOPES } from "../src/pages/google.ts";
+    const nativeFetch = globalThis.fetch;
+    const fixtureUrl = new URL("./browser-google.fixture.json", import.meta.url);
+    document.querySelector("#run").onclick = async () => {
+      const result = document.querySelector("#result");
+      const checks = {};
+      const holder = { fetch: nativeFetch };
+      try { await holder.fetch(fixtureUrl); checks.unbound = "ok"; }
+      catch (error) { checks.unbound = error.message; }
+      checks.bound = (await nativeFetch.call(globalThis, fixtureUrl)).status;
+      let requests = 0;
+      // Preserve the receiver so Chrome's native fetch, rather than a mock,
+      // detects calling it as a method of BrowserGoogle.
+      globalThis.fetch = function (input) {
+        return nativeFetch.call(this, fixtureUrl, { cache: "no-store" }).then(async response => {
+          requests++;
+          const fixture = await response.json();
+          const url = new URL(input);
+          return Response.json(url.pathname.endsWith("/primary") ? fixture.primary
+            : url.pathname.endsWith("/events") ? { items: [], accessRole: "owner" }
+            : { items: [fixture.primary] });
+        });
+      };
+      try {
+        const google = new BrowserGoogle("synthetic.apps.googleusercontent.com", {
+          oauth2: {
+            initTokenClient(config) {
+              return { requestAccessToken() {
+                queueMicrotask(() => config.callback({ access_token: "synthetic-token",
+                  expires_in: 3600, scope: GOOGLE_SCOPES.join(" ") }));
+              } };
+            },
+            revoke(_token, callback) { callback({ successful: true }); },
+          },
+        });
+        const session = await google.connect();
+        const data = await google.events({ ...session.calendars[0], calendarId: session.calendars[0].id,
+          id: "test", name: "Test", position: "Test", salutation: "Bapak", closing: "Pak",
+          calendarName: "Test", revision: 1 }, "2026-09-17");
+        checks.gateway = "passed";
+        checks.connected = google.isConnected();
+        checks.events = data.events.length;
+      } catch (error) { checks.gateway = error.message; }
+      finally {
+        globalThis.fetch = nativeFetch;
+        checks.requests = requests;
+        result.textContent = JSON.stringify(checks, null, 2);
+      }
+    };
+  </script>
+</html>

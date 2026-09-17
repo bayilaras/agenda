@@ -161,6 +161,49 @@ test("missing configuration or Google library never opens a popup or sends Calen
   );
 });
 
+test("default browser fetch preserves the native API receiver through login and calendar reads", async () => {
+  const originalFetch = globalThis.fetch;
+  const network = fetchMock();
+  globalThis.fetch = function (this: unknown, input, init) {
+    if (this !== undefined && this !== globalThis)
+      throw new TypeError("Illegal invocation");
+    return network.fetcher(input, init);
+  };
+  try {
+    // Deliberately omit the injected fetcher: the production constructor must
+    // preserve the native browser receiver instead of assigning the gateway.
+    const google = new BrowserGoogle("client", { ...oauthMock() });
+    const session = await google.connect();
+    assert.equal(session.user.email, primary.id);
+    assert.equal((await google.calendars()).length, 1);
+    assert.equal((await google.events(leader, "2026-09-17")).events.length, 1);
+    assert.equal(network.urls.length, 4);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("popup close after a valid token callback does not cancel calendar retrieval", async () => {
+  const oauth = oauthMock({ auto: false });
+  let finishCalendarList: ((response: Response) => void) | undefined;
+  const network = fetchMock((url) =>
+    url.pathname.endsWith("/calendarList")
+      ? new Promise<Response>((resolve) => {
+          finishCalendarList = resolve;
+        })
+      : undefined,
+  );
+  const google = new BrowserGoogle("client", { ...oauth, ...network });
+  const connection = google.connect();
+  oauth.configs[0].callback(validToken);
+  assert.ok(finishCalendarList, "Calendar retrieval starts after authorization");
+  oauth.configs[0].error_callback({ type: "popup_closed" });
+  finishCalendarList(Response.json({ items: [primary] }));
+  const session = await connection;
+  assert.equal(session.user.email, primary.id);
+  assert.equal(google.isConnected(), true);
+});
+
 test("granular consent cannot grant only one of the two required readonly scopes", async () => {
   let requests = 0;
   const google = new BrowserGoogle("client", {

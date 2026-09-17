@@ -1,0 +1,9 @@
+{
+  "primary": {
+    "id": "owner@example.test",
+    "summary": "Kalender sintetis",
+    "timeZone": "Asia/Jakarta",
+    "accessRole": "owner",
+    "primary": true
+  }
+}

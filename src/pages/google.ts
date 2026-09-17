@@ -324,7 +324,9 @@ export class BrowserGoogle implements CalendarGateway {
     private readonly dependencies: BrowserGoogleDependencies = {},
   ) {
     this.configured = Boolean(publicClientId.trim());
-    this.fetcher = dependencies.fetcher ?? fetch;
+    // Native browser fetch requires Window as its receiver. Storing it unbound
+    // makes this.fetcher(...) fail before sending any Calendar request.
+    this.fetcher = dependencies.fetcher ?? globalThis.fetch.bind(globalThis);
     this.now = dependencies.now ?? Date.now;
     this.requestTimeout = dependencies.requestTimeoutMs ?? 20_000;
     this.popupTimeout = dependencies.popupTimeoutMs ?? 120_000;
@@ -480,7 +482,10 @@ export class BrowserGoogle implements CalendarGateway {
               finish,
             );
           },
-          error_callback: (error) =>
+          error_callback: (error) => {
+            // A popup can report closure after delivering the access token.
+            // Calendar loading owns completion once authorization succeeds.
+            if (received || settled) return;
             finish(
               googleError(
                 error.type === "popup_failed_to_open"
@@ -490,7 +495,8 @@ export class BrowserGoogle implements CalendarGateway {
                   ? "GOOGLE_POPUP_BLOCKED"
                   : "GOOGLE_POPUP_CLOSED",
               ),
-            ),
+            );
+          },
         });
         client.requestAccessToken({ prompt: "select_account" });
       } catch {
