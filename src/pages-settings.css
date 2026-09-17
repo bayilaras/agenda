@@ -1,0 +1,256 @@
+.browser-settings {
+  min-width: 0;
+  color: var(--ink);
+}
+
+.browser-settings-intro,
+.browser-settings-section-heading p,
+.browser-settings-help {
+  color: #627369;
+  line-height: 1.65;
+  font-size: 12px;
+}
+
+.browser-settings-intro {
+  margin: 0 0 16px;
+}
+
+.browser-settings-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--green-soft);
+  font-size: 11px;
+}
+
+.browser-settings-account > span {
+  min-width: 0;
+}
+
+.browser-settings-account strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.browser-settings-message {
+  margin-top: 14px;
+  overflow-wrap: anywhere;
+}
+
+.browser-settings-loading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  padding: 16px 0;
+}
+
+.browser-settings-section {
+  padding-top: 23px;
+}
+
+.browser-settings-section + .browser-settings-section {
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+}
+
+.browser-settings-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.browser-settings-section-heading h3 {
+  font-size: 15px;
+  margin: 0 0 5px;
+}
+
+.browser-settings-section-heading p {
+  margin: 0;
+}
+
+.browser-settings-section-heading > .button {
+  flex-shrink: 0;
+}
+
+.browser-settings .form-field {
+  color: #52665b;
+  font-size: 12px;
+  position: relative;
+  margin: 12px 0;
+}
+
+.browser-settings .form-field input,
+.browser-settings .form-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  color: var(--ink);
+  font-size: 14px;
+  border: 1px solid #cfdacf;
+  border-radius: 7px;
+}
+
+.browser-settings .form-grid {
+  gap: 16px;
+}
+
+.browser-settings-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.browser-required {
+  position: absolute;
+  right: 0;
+  top: 0;
+  font-size: 10px;
+  color: #748178;
+  font-weight: 400;
+}
+
+.browser-settings-help {
+  margin: 5px 0 14px;
+}
+
+.browser-settings-save,
+.browser-backup-confirm,
+.browser-settings-footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.browser-settings .button {
+  min-height: 40px;
+  font-size: 12px;
+}
+
+.browser-backup-warning p {
+  margin: 0;
+}
+
+.browser-backup-warning > svg,
+.browser-settings-account > svg {
+  flex-shrink: 0;
+}
+
+.browser-backup-actions {
+  margin: 18px 0 0;
+}
+
+.browser-settings .browser-backup-file {
+  margin-top: 18px;
+}
+
+.browser-backup-file input {
+  overflow: hidden;
+  padding: 8px;
+  background: #f8faf7;
+}
+
+.browser-backup-file input::file-selector-button {
+  font: inherit;
+  padding: 6px 9px;
+  border: 1px solid #cfdacf;
+  border-radius: 5px;
+  background: #fff;
+  color: var(--forest);
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.browser-backup-preview {
+  border: 1px solid #cfdacf;
+  border-radius: 10px;
+  padding: 17px;
+  margin-top: 16px;
+  background: #f8faf7;
+}
+
+.browser-backup-filename {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.browser-backup-filename > svg {
+  flex-shrink: 0;
+  color: var(--forest);
+}
+
+.browser-backup-filename h4 {
+  margin: 0 0 5px;
+  font-size: 13px;
+}
+
+.browser-backup-filename p {
+  margin: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.browser-backup-preview dl {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+  font-size: 12px;
+}
+
+.browser-backup-preview dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: 12px;
+}
+
+.browser-backup-preview dt {
+  color: #637469;
+}
+
+.browser-backup-preview dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.browser-settings-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 24px;
+  padding-top: 18px;
+}
+
+@media (max-width: 560px) {
+  .browser-settings .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .browser-settings .form-field input,
+  .browser-settings .form-field select {
+    font-size: 16px;
+  }
+
+  .browser-settings-section-heading {
+    flex-wrap: wrap;
+  }
+
+  .browser-backup-confirm > .button,
+  .browser-settings-save > .button {
+    flex: 1 1 150px;
+  }
+
+  .browser-backup-preview {
+    padding: 13px;
+  }
+}

@@ -1,0 +1,13 @@
+node_modules/
+dist/
+dist-pages/
+.env.*
+!.env.example
+!.env.pages.example
+app-config*.json
+*backup*.json
+publish-staging/
+data/
+.env
+*.log
+test-results/
